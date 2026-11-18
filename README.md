@@ -1,0 +1,97 @@
+# Statistical Report Workspace
+
+Turn Excel, CSV, JSON, and PDF files into corrected, interactive statistical reports. There is no login and no server. Files are processed in the browser and never leave the device.
+
+## What it does
+
+| Area | Features |
+|---|---|
+| **Import** | Drag and drop for `.xlsx`, `.xls`, `.csv`, `.json`, and `.pdf`. Sheet and table picker, PDF table detection, OCR for scanned PDFs, stacking and matching of several tables. |
+| **Computation audit** | Finds and corrects wrong row calculations, spreadsheet errors such as `#DIV/0!`, wrong printed totals, total rows mixed into data, duplicates, numbers stored as text, and inconsistent labels. Every correction can be reviewed and switched off. |
+| **Analysis** | Distributions, correlations, outliers, trend tests, seasonality, written findings, and a "how this was calculated" view for each finding. |
+| **Workspace** | Bento dashboard, cross-filtering and highlighting, slicers, drill-down, drill-through, hierarchies, a fields pane with Axis, Values, Legend, Tooltips, and Small Multiples, bookmarks, and multiple pages. |
+| **Measures** | A DAX-style formula bar with percent of total, running totals, moving averages, year over year, conditional ratios, and what-if parameters. |
+| **Statistics** | t-test, ANOVA, Mann-Whitney, Kruskal-Wallis, chi-square, confidence intervals, and forecasting. |
+| **Downloads** | Excel, Google Sheets, PDF, PowerPoint, PNG, CSV, and a project file. Workbooks are re-opened and checked before they are offered for download. |
+
+## Run it on your computer
+
+Install [Node.js](https://nodejs.org) 22 or newer, then run:
+
+```powershell
+npm ci
+```
+
+```powershell
+npm run dev
+```
+
+Open the address shown in the terminal.
+
+## Publish it on GitHub Pages
+
+1. Create a new **public** repository on GitHub.
+2. Upload this folder to the repository's `main` branch. Do not upload `node_modules` or `dist`.
+3. Open **Settings > Pages**.
+4. Under **Build and deployment > Source**, choose **GitHub Actions**.
+5. Open the **Actions** tab and wait for **Deploy to GitHub Pages** to finish.
+6. Visit `https://<your-username>.github.io/<repository-name>/`.
+
+With Git installed, these commands upload the folder after you replace the address:
+
+```powershell
+git init -b main
+```
+
+```powershell
+git add .
+```
+
+```powershell
+git commit -m "Initial release"
+```
+
+```powershell
+git remote add origin https://github.com/<your-username>/<repository-name>.git
+```
+
+```powershell
+git push -u origin main
+```
+
+## Opening a report in Google Sheets
+
+Google Sheets files can only be created inside a Google account, and this app has no login. The **Google Sheets** download creates a compatible workbook. In Google Sheets, choose **File > Import > Upload**, then select the file.
+
+## How calculations are checked
+
+| Command | What it checks |
+|---|---|
+| `npm test` | Compares statistics, aggregations, and measures with reference answers from NumPy, SciPy, and pandas in `tests/golden/`. Also tests the audit, importers, and workbook builder. |
+| `npm run lint` | Type-checks all code and rejects unused code. |
+
+To regenerate the reference answers, install `numpy`, `scipy`, and `pandas`, then run `python tests/golden/make_golden.py`.
+
+## Known limits
+
+- Very large reports depend on the memory available to the browser.
+- Excel limits a sheet to 1,048,576 rows and Google Sheets limits a file to 10 million cells. Larger downloads are cut off and say so in the file.
+- Complex PDF layouts and poor scans can need manual review. OCR reads English text.
+- The audit assumes a calculated column's inputs are right when a row disagrees with the formula that the rest of the column follows.
+- The interface is available in English.
+
+## Project layout
+
+```text
+src/core/      Calculations, audit, measures, and report queries
+src/ingest/    File readers and PDF table detection
+src/export/    Excel, Google Sheets, PDF, PowerPoint, PNG, and CSV output
+src/state/     App state and browser storage
+src/ui/        Home page, data preparation, and report workspace
+tests/         Automated tests and independent reference answers
+docs/PLAN.md   Original project plan
+```
+
+## License
+
+[MIT](LICENSE)

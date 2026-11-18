@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+*.log
+*.local
+.DS_Store
+Thumbs.db
+__pycache__/
+.venv/
+
+# Generated from node_modules during every build
+public/ocr/

@@ -1,0 +1,10 @@
+{
+  "name": "Statistical Report Workspace",
+  "short_name": "Statistical",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f6f3",
+  "theme_color": "#1c5cab",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
