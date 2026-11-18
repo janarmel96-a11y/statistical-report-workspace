@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { bucketAdd, bucketLabel, Engine, groupConstraint, lastPeriodIncomplete } from './engine';
 import { formatNumber, formatPct } from './format';
 import { fieldLabel, type Page, type ReportDoc, type Visual, type GridPos } from './report';

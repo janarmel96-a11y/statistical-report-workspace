@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import type { WorkbookInput } from './workbook';

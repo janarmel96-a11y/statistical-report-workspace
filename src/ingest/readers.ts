@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import type { ColumnHint, RawCell, RawTable } from '../core/types';

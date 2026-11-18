@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import type { RawCell, RawTable } from '../core/types';
 
 /** Layout analysis that turns positioned text into tables. Used for both digital PDFs and OCR output. */

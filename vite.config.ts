@@ -13,6 +13,8 @@ function contentSecurityPolicy(): Plugin {
     "connect-src 'self' data: blob:",
     "worker-src 'self' blob:",
     "object-src 'none'",
+    "frame-src 'none'",
+    "media-src 'none'",
     "base-uri 'self'",
     "form-action 'none'",
   ].join('; ');
@@ -32,6 +34,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 1800,
     rollupOptions: {
       output: {
+        banner: '/*! Statistical Report Workspace. Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved. */',
         manualChunks(id) {
           if (id.includes('echarts') || id.includes('zrender')) return 'charts';
           if (id.includes('node_modules/react') || id.includes('scheduler')) return 'react';

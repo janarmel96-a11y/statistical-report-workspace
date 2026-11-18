@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import type { Engine } from './engine';
 import { bucketAdd, bucketStart, groupConstraint, PART_ORDER, shiftYears } from './engine';
 import { mean, median, quantile, stdev, sum, variance } from './stats';

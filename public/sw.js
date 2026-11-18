@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 // Offline support. Only this site's own files are cached. User data is never stored here.
 const CACHE = 'srw-v1';
 

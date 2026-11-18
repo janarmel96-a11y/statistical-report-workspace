@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useMemo, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Info, Redo2, Undo2 } from 'lucide-react';
 import { formatCell, formatPct } from '../core/format';

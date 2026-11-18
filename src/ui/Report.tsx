@@ -1,7 +1,8 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Responsive, WidthProvider, type Layout } from 'react-grid-layout';
 import {
-  AlertTriangle, ArrowLeft, Bookmark, Check, ChevronDown, Download, Filter, Highlighter, PanelRight, Pencil, Plus, Printer, Redo2, RefreshCw, Search, SlidersHorizontal, Undo2, X,
+  AlertTriangle, ArrowLeft, Bookmark, Check, ChevronDown, Clapperboard, Download, Filter, Highlighter, PanelRight, Pencil, Plus, Printer, Redo2, RefreshCw, Search, SlidersHorizontal, Sparkles, Undo2, X,
 } from 'lucide-react';
 import { formatCell, formatNumber } from '../core/format';
 import { newId, recommendTemplates } from '../core/insights';
@@ -15,6 +16,7 @@ import { VisualCard, type DrillTarget } from './VisualCard';
 
 const Grid = WidthProvider(Responsive);
 const ExportDialog = lazy(() => import('./ExportDialog'));
+const VideoStudio = lazy(() => import('./VideoStudio'));
 
 function SlicerControl({ field }: { field: FieldRef }) {
   const engine = useStore((s) => s.engine)!;
@@ -120,6 +122,7 @@ export function Report() {
   const [side, setSide] = useState(() => innerWidth >= 1100);
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [video, setVideo] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [bmName, setBmName] = useState('');
   const replaceInput = useRef<HTMLInputElement>(null);
@@ -198,6 +201,7 @@ export function Report() {
         </select>
         <ThemeSwitch />
         <button className="icon-btn" aria-label="Toggle side panel" aria-pressed={side} title="Toggle side panel" onClick={() => setSide(!side)}><PanelRight size={17} /></button>
+        <button className="btn ghost" onClick={() => setVideo(true)}><Clapperboard size={15} /> Video</button>
         <button className="btn primary" onClick={() => setExporting(true)}><Download size={15} /> Download</button>
       </header>
 
@@ -210,6 +214,25 @@ export function Report() {
             {s.schemaNotice.typeChanged.length > 0 && ` Changed type: ${s.schemaNotice.typeChanged.join(', ')}.`}
             {' '}Charts that used missing fields need to be updated.</span>
           <button className="icon-btn sm" aria-label="Dismiss" onClick={s.dismissSchemaNotice}><X size={14} /></button>
+        </div>
+      )}
+
+      {s.autoNotice && (
+        <div className="banner info" role="status">
+          <Sparkles size={16} />
+          <span>
+            <b>Report generated automatically</b> from {s.autoNotice.used} ({s.autoNotice.rows.toLocaleString()} rows).
+            {' '}{[
+              s.autoNotice.corrected > 0 && `${s.autoNotice.corrected.toLocaleString()} ${s.autoNotice.corrected === 1 ? 'value' : 'values'} corrected`,
+              s.autoNotice.removedRows > 0 && `${s.autoNotice.removedRows.toLocaleString()} ${s.autoNotice.removedRows === 1 ? 'row' : 'rows'} removed`,
+              s.autoNotice.labelsFixed > 0 && `${s.autoNotice.labelsFixed.toLocaleString()} ${s.autoNotice.labelsFixed === 1 ? 'label' : 'labels'} fixed`,
+            ].filter(Boolean).join(', ') || 'No corrections were needed'}.
+            {s.autoNotice.review > 0 && ` ${s.autoNotice.review} ${s.autoNotice.review === 1 ? 'item needs' : 'items need'} your review.`}
+            {s.autoNotice.skipped.length > 0 && ` Not used: ${s.autoNotice.skipped.join(', ')}.`}
+            {s.autoNotice.note && ` ${s.autoNotice.note}`}
+          </span>
+          <button className="btn sm" onClick={() => { s.dismissAutoNotice(); s.setRoute('prepare'); }}>Review data</button>
+          <button className="icon-btn sm" aria-label="Dismiss" onClick={s.dismissAutoNotice}><X size={14} /></button>
         </div>
       )}
 
@@ -248,7 +271,8 @@ export function Report() {
         {side && <SidePanel visual={selected} cs={cs} onClose={() => setSide(false)} />}
       </div>
       {drill && <DrillThrough target={drill} onClose={() => setDrill(null)} />}
-      {exporting && <Suspense fallback={null}><ExportDialog onClose={() => setExporting(false)} /></Suspense>}
+      {video && <Suspense fallback={null}><VideoStudio onClose={() => setVideo(false)} /></Suspense>}
+      {exporting && <Suspense fallback={null}><ExportDialog onClose={() => setExporting(false)} onVideo={() => { setExporting(false); setVideo(true); }} /></Suspense>}
     </div>
   );
 }

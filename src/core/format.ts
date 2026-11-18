@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import type { Cell, Column, NumberFormat } from './types';
 
 const SYMBOLS: Record<string, string> = {

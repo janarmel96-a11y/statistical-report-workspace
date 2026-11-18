@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { Engine } from '../core/engine';
 import { formatNumber, formatPct } from '../core/format';
 import { generateInsights, profileTable } from '../core/insights';
@@ -40,7 +41,7 @@ const allVisuals = (r: ReportDoc): Visual[] => {
 
 interface ChartImage { visual: Visual; dataUrl: string; base64: string; width: number; height: number }
 
-function chartImages(ctx: ExportContext): ChartImage[] {
+export function chartImages(ctx: ExportContext): ChartImage[] {
   const theme = vizTheme(false, ctx.palette);
   const out: ChartImage[] = [];
   for (const v of allVisuals(ctx.report)) {
@@ -165,43 +166,6 @@ export async function exportPdf(ctx: ExportContext, progress: Progress) {
     if (i % 4 === 3 || i === images.length - 1) footer();
   });
   download(doc.output('arraybuffer'), `${safeFileName(ctx.report.title)}.pdf`, 'application/pdf');
-}
-
-export async function exportPptx(ctx: ExportContext, progress: Progress) {
-  progress('Preparing charts');
-  await nextFrame();
-  const images = chartImages(ctx);
-  const { default: PptxGenJS } = await import('pptxgenjs');
-  const p = new PptxGenJS();
-  p.layout = 'LAYOUT_WIDE';
-  p.title = ctx.report.title;
-  const insights = generateInsights(ctx.engine, ctx.constraints, ctx.filterText);
-  const ink = '0B0B0B';
-  const sub = '52514E';
-  const s0 = p.addSlide();
-  s0.addText(ctx.report.title, { x: 0.7, y: 2.3, w: 11.9, h: 1.2, fontSize: 38, bold: true, color: ink, fontFace: 'Segoe UI' });
-  s0.addText(`Generated ${new Date().toISOString().slice(0, 10)}. Filters: ${ctx.filterText}`, { x: 0.7, y: 3.5, w: 11.9, h: 0.5, fontSize: 15, color: sub, fontFace: 'Segoe UI' });
-  const s1 = p.addSlide();
-  s1.addText('Summary', { x: 0.6, y: 0.35, w: 12, h: 0.6, fontSize: 26, bold: true, color: ink, fontFace: 'Segoe UI' });
-  const kpis = kpiList(ctx).slice(0, 4);
-  kpis.forEach((k, i) => {
-    const w = (12.1 - 0.2 * (kpis.length - 1)) / Math.max(1, kpis.length);
-    const x = 0.6 + i * (w + 0.2);
-    s1.addShape(p.ShapeType.roundRect, { x, y: 1.1, w, h: 1.5, fill: { color: 'F4F4F1' }, line: { color: 'E1E0D9', width: 1 }, rectRadius: 0.08 });
-    s1.addText(k.label, { x: x + 0.12, y: 1.15, w: w - 0.24, h: 0.4, fontSize: 12, color: sub, fontFace: 'Segoe UI' });
-    s1.addText(formatNumber(k.value, { format: k.format, currency: k.currency, compact: true }), { x: x + 0.12, y: 1.5, w: w - 0.24, h: 0.65, fontSize: 26, bold: true, color: ink, fontFace: 'Segoe UI' });
-    if (k.note) s1.addText(k.note, { x: x + 0.12, y: 2.13, w: w - 0.24, h: 0.38, fontSize: 10, color: sub, fontFace: 'Segoe UI' });
-  });
-  if (insights.length) {
-    s1.addText(insights.slice(0, 5).map((i) => ({ text: i.text, options: { bullet: true, breakLine: true } })), { x: 0.6, y: 2.9, w: 12.1, h: 4.1, fontSize: 16, color: ink, fontFace: 'Segoe UI', valign: 'top', paraSpaceAfter: 8 });
-  }
-  for (const img of images) {
-    const s = p.addSlide();
-    s.addText(img.visual.title, { x: 0.6, y: 0.3, w: 12.1, h: 0.6, fontSize: 24, bold: true, color: ink, fontFace: 'Segoe UI' });
-    s.addImage({ data: img.dataUrl, x: 1.2, y: 1, w: 10.9, h: 10.9 * (620 / 1120) });
-  }
-  const buf = await p.write({ outputType: 'arraybuffer' }) as ArrayBuffer;
-  download(buf, `${safeFileName(ctx.report.title)}.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
 }
 
 export async function exportPng(ctx: ExportContext, visuals: Visual[], progress: Progress) {

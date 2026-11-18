@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import type ExcelJSNS from 'exceljs';
 import type { ColumnProfile, Insight } from '../core/insights';
 import type { VisualTable } from '../core/report';

@@ -4,8 +4,11 @@
   "version": "1.0.0",
   "description": "Browser-based statistical report workspace. Turns Excel, CSV, JSON and PDF files into interactive reports. No login, no server.",
   "type": "module",
-  "license": "MIT",
-  "engines": { "node": ">=22" },
+  "author": "Jan Armel Java Ajeno",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "prepare:assets": "node scripts/copy-ocr-assets.mjs",
     "dev": "npm run prepare:assets && vite",
@@ -23,6 +26,7 @@
     "jspdf": "4.2.1",
     "jszip": "3.10.2",
     "lucide-react": "1.75.0",
+    "mp4-muxer": "5.2.2",
     "papaparse": "5.7.1",
     "pdfjs-dist": "6.5.438",
     "pptxgenjs": "4.0.1",

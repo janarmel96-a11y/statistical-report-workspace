@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { evaluateMeasure, parseMeasure, type Node } from './measures';
 import { mean, median, stdev, sum } from './stats';
 import type { Agg, Cell, Column, Constraint, DataTable, DatePart, FieldRef, Measure, NumberFormat, Parameter, ValueRef } from './types';

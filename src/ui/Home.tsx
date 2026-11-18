@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, BarChart3, FileSpreadsheet, FileUp, ListChecks, ShieldCheck, Trash2, Upload } from 'lucide-react';
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { ArrowRight, BarChart3, Combine, FileSpreadsheet, FileUp, ListChecks, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { ACCEPT } from '../ingest';
 import { deleteProject, listProjects, loadProject, type ProjectSummary } from '../state/persist';
 import { useStore } from '../state/store';
 import { Logo, ThemeSwitch } from './common';
+import { PrivacyDialog } from './PrivacyDialog';
+
+const CombineDialog = lazy(() => import('./CombineDialog'));
 
 const SAMPLES = [
   { file: 'retail-sales.csv', name: 'Retail sales', meta: '3 years · 1,500 orders', note: 'Includes planted calculation errors, so you can watch them get fixed.' },
@@ -22,7 +26,11 @@ export function Home() {
   const loadSample = useStore((s) => s.loadSample);
   const openRecord = useStore((s) => s.openRecord);
   const toast = useStore((s) => s.toast);
+  const autoMode = useStore((s) => s.autoMode);
+  const setAutoMode = useStore((s) => s.setAutoMode);
   const [drag, setDrag] = useState(false);
+  const [privacy, setPrivacy] = useState(false);
+  const [combining, setCombining] = useState(false);
   const [recent, setRecent] = useState<ProjectSummary[]>([]);
   const input = useRef<HTMLInputElement>(null);
 
@@ -54,6 +62,13 @@ export function Home() {
             <p>Excel (.xlsx, .xls), CSV, JSON, or PDF, up to 200 MB</p>
             <button className="btn primary lg" onClick={() => input.current?.click()}>Choose a file</button>
             <input ref={input} type="file" accept={ACCEPT} multiple hidden aria-label="Choose data files" onChange={(e) => { onFiles(e.target.files); e.target.value = ''; }} />
+            <div className="auto-mode">
+              <label className="switch">
+                <input type="checkbox" checked={autoMode} onChange={(e) => setAutoMode(e.target.checked)} />
+                <i /> <span>Automatic report</span>
+              </label>
+              <small>{autoMode ? 'Your report opens right after upload, with errors already corrected.' : 'Turn on to skip the review step and open the finished report right after upload.'}</small>
+            </div>
           </div>
 
           <div className="samples">
@@ -64,6 +79,12 @@ export function Home() {
                 <ArrowRight size={18} />
               </button>
             ))}
+          </div>
+
+          <div className="combine-card">
+            <span className="drop-icon"><Combine size={22} /></span>
+            <span><h2>Combine files</h2><p>Stack two or more files with the same headers into one clean file.</p></span>
+            <button className="btn" onClick={() => setCombining(true)}>Combine files <ArrowRight size={15} /></button>
           </div>
 
           {recent.length > 0 && (
@@ -89,8 +110,13 @@ export function Home() {
             ))}
           </ol>
         </section>
-        <footer className="home-foot"><ShieldCheck size={15} /> Files are processed in your browser. Nothing is uploaded and no analytics are collected.</footer>
+        <footer className="home-foot">
+          <p><ShieldCheck size={15} /> Files are processed in your browser. Nothing is uploaded and no analytics are collected. <button className="link" onClick={() => setPrivacy(true)}>Privacy and security</button></p>
+          <p className="credit">Created by Jan Armel Java Ajeno</p>
+        </footer>
       </main>
+      {combining && <Suspense fallback={null}><CombineDialog onClose={() => setCombining(false)} /></Suspense>}
+      {privacy && <PrivacyDialog onClose={() => setPrivacy(false)} onDeleted={() => setRecent([])} />}
     </div>
   );
 }

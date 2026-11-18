@@ -1,5 +1,7 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { bucketLabel, defaultAgg, Engine, groupConstraint, lastPeriodIncomplete, shiftYears } from './engine';
 import { boxStats, type BoxStats, forecast, type Forecast, histogram, type HistogramBin, pearson, linearFit } from './stats';
+import type { AssistantMemory } from './assistant';
 import { formatDate } from './format';
 import type { Cell, Constraint, DatePart, FieldRef, Measure, NumberFormat, Parameter, Step, ValueRef } from './types';
 
@@ -40,6 +42,8 @@ export interface ReportDoc {
   bookmarks: Bookmark[];
   slicerFields: FieldRef[];
   recipe: Step[];
+  /** What the report assistant has learned. It stays inside this report. */
+  assistant?: AssistantMemory;
 }
 
 export const fieldLabel = (f: FieldRef) => (f.part ? `${f.col} (${f.part})` : f.col);

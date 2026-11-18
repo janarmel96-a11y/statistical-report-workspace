@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useMemo, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { uniqueHeaders } from '../core/parse';

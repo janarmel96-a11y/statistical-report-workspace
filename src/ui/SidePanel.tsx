@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import {
@@ -11,6 +12,7 @@ import type { Visual, VisualType } from '../core/report';
 import { anova, chiSquare, kruskalWallis, mannWhitney, meanCI, welchT, type TestResult } from '../core/stats';
 import type { Agg, Cell, Column, Constraint, DatePart, FieldRef, Measure, NumberFormat, ValueRef } from '../core/types';
 import { useStore } from '../state/store';
+import { AssistantPanel } from './AssistantPanel';
 import { InsightsList } from './VisualCard';
 
 const GALLERY: [VisualType, string, ReactNode][] = [
@@ -366,7 +368,7 @@ function DataTab() {
   );
 }
 
-const TABS = ['Fields', 'Findings', 'Measures', 'Tests', 'Data'] as const;
+const TABS = ['Assistant', 'Fields', 'Findings', 'Measures', 'Tests', 'Data'] as const;
 
 export function SidePanel({ visual, cs, onClose }: { visual: Visual | undefined; cs: Constraint[]; onClose: () => void }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Fields');
@@ -377,6 +379,7 @@ export function SidePanel({ visual, cs, onClose }: { visual: Visual | undefined;
         <button className="icon-btn sm side-close" aria-label="Close panel" onClick={onClose}><X size={15} /></button>
       </div>
       <div className="side-body" role="tabpanel">
+        {tab === 'Assistant' && <AssistantPanel cs={cs} />}
         {tab === 'Fields' && <FieldsTab key={visual?.id} visual={visual} />}
         {tab === 'Findings' && <InsightsList cs={cs} limit={20} />}
         {tab === 'Measures' && <MeasuresTab />}

@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import type { ColumnHint, RawCell, RawTable } from '../core/types';
 
 const isBlank = (v: RawCell) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');

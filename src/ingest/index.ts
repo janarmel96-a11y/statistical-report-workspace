@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import type { RawTable } from '../core/types';
 import type { Progress } from './pdf';
 

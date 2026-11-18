@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import type { RawTable } from '../core/types';
 import { pageTablesToRaw, tablesOnPage, type PageTable, type TextBox } from './pdfTables';
 

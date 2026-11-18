@@ -1,6 +1,8 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useState, type ReactNode } from 'react';
-import { CheckCircle2, ExternalLink, FileBox, FileImage, FileJson, FileSpreadsheet, FileText, Presentation, Sheet, Table } from 'lucide-react';
-import { exportCsv, exportPdf, exportPng, exportPptx, exportProject, exportWorkbook, type ExportContext } from '../export/reportExports';
+import { CheckCircle2, ExternalLink, FileBox, FileImage, FileJson, FileSpreadsheet, FileText, Presentation, Sheet, Table, Video } from 'lucide-react';
+import { exportPptx } from '../export/presentation';
+import { exportCsv, exportPdf, exportPng, exportProject, exportWorkbook, type ExportContext } from '../export/reportExports';
 import { keyLabel } from '../core/report';
 import { filterSummary, pageConstraints, useStore } from '../state/store';
 import { Modal } from './common';
@@ -11,13 +13,13 @@ const OPTIONS: { id: Kind; icon: ReactNode; name: string; text: string; tag?: st
   { id: 'excel', icon: <FileSpreadsheet size={22} />, name: 'Excel workbook', text: 'Summary, charts, tables with live totals, full data, and every correction.', tag: '.xlsx' },
   { id: 'sheets', icon: <Sheet size={22} />, name: 'Google Sheets', text: 'A workbook prepared to open in Google Sheets with formulas intact.', tag: '.xlsx' },
   { id: 'pdf', icon: <FileText size={22} />, name: 'PDF report', text: 'Key figures, findings, and charts, ready to print or email.', tag: '.pdf' },
-  { id: 'pptx', icon: <Presentation size={22} />, name: 'PowerPoint', text: 'A slide for the summary and one for each chart.', tag: '.pptx' },
+  { id: 'pptx', icon: <Presentation size={22} />, name: 'PowerPoint', text: 'Animated slides that explain each chart, with detailed speaker notes.', tag: '.pptx' },
   { id: 'png', icon: <FileImage size={22} />, name: 'Image of this page', text: 'All charts on the current page in one picture.', tag: '.png' },
   { id: 'csv', icon: <Table size={22} />, name: 'CSV data', text: 'The corrected rows, with the current filters applied.', tag: '.csv' },
   { id: 'project', icon: <FileJson size={22} />, name: 'Report project', text: 'Save everything to reopen on another device.', tag: '.json' },
 ];
 
-export default function ExportDialog({ onClose }: { onClose: () => void }) {
+export default function ExportDialog({ onClose, onVideo }: { onClose: () => void; onVideo: () => void }) {
   const s = useStore();
   const [busy, setBusy] = useState<string | null>(null);
   const [done, setDone] = useState<Kind | null>(null);
@@ -59,6 +61,13 @@ export default function ExportDialog({ onClose }: { onClose: () => void }) {
         </fieldset>
       )}
       <ul className="exports">
+        <li>
+          <button disabled={Boolean(busy)} onClick={onVideo}>
+            <span className="ex-icon"><Video size={22} /></span>
+            <span className="ex-text"><b>Video presentation</b><small>A narrated-style video with scenes, captions, music, and animation.</small></span>
+            <em>.mp4</em>
+          </button>
+        </li>
         {OPTIONS.map((o) => (
           <li key={o.id}>
             <button disabled={Boolean(busy)} onClick={() => void run(o.id)}>

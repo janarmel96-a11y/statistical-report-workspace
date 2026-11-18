@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   build:
+    # Copies of this repository can never publish to this site.
+    if: github.repository == 'janarmel96-a11y/statistical-report-workspace'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

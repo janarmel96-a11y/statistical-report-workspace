@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { Component, lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { useStore } from './state/store';
 import { BusyOverlay, Toasts, useDarkMode } from './ui/common';

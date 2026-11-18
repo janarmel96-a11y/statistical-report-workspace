@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 /**
  * Statistics library. Definitions match Excel and SciPy so results can be checked against both:
  * quantile = PERCENTILE.INC, skewness = SKEW, kurtosis = KURT, stdev = STDEV.S.

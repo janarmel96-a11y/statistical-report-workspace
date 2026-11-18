@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 /** Shared data model. Everything in src/core is free of browser APIs so it can be unit tested. */
 
 export type Cell = number | string | boolean | null;

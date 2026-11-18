@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { mean, median } from './stats';
 import type { Cell, ColRole, ColType, Column, DataTable, Step } from './types';
 import { parseDate, parseNumber } from './parse';

@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CheckCircle2, Info, Laptop, Moon, Sun, X, AlertTriangle } from 'lucide-react';
 import { useStore, type ThemeMode } from '../state/store';

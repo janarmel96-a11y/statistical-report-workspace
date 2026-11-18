@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import type { EChartsCoreOption } from 'echarts/core';
 import { Engine, lastPeriodIncomplete } from '../core/engine';
 import { escapeHtml, formatNumber, formatPct } from '../core/format';

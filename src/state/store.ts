@@ -1,5 +1,7 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { create } from 'zustand';
 import { qualityScore, runAudit, type QualityScore } from '../core/audit';
+import { chooseTables, summarizeAuto, type AutoSummary } from '../core/autoReport';
 import { Engine } from '../core/engine';
 import { generateInsights, newId, newReport, recommendTemplates } from '../core/insights';
 import { inferTable, type InferredColumn } from '../core/parse';
@@ -7,7 +9,7 @@ import { appendTables, applyRecipe, diffSchema, joinTables, reusableSteps, type 
 import type { Bookmark, Page, ReportDoc, Selection, Slicer, Visual } from '../core/report';
 import { DEFAULT_LOCALE, type Constraint, type DataTable, type Finding, type LocaleOptions, type RawTable, type Step } from '../core/types';
 import { readFile } from '../ingest';
-import { saveProject, type CombineConfig, type ProjectRecord } from './persist';
+import { deleteAllProjects, saveProject, type CombineConfig, type ProjectRecord } from './persist';
 
 export type Route = 'home' | 'prepare' | 'report';
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -20,6 +22,8 @@ interface State {
   themeMode: ThemeMode;
   palette: PaletteName;
   patterns: boolean;
+  autoMode: boolean;
+  privateMode: boolean;
   busy: { message: string; fraction?: number } | null;
   toasts: Toast[];
   pending: RawTable[] | null;
@@ -48,12 +52,16 @@ interface State {
   undoStack: ReportDoc[];
   redoStack: ReportDoc[];
   schemaNotice: SchemaDiff | null;
+  autoNotice: AutoSummary | null;
   revision: number;
 
   setRoute(r: Route): void;
   setTheme(m: ThemeMode): void;
   setPalette(p: PaletteName): void;
   setPatterns(v: boolean): void;
+  setAutoMode(v: boolean): void;
+  setPrivateMode(v: boolean): void;
+  deleteSavedData(): Promise<void>;
   toast(kind: Toast['kind'], text: string): void;
   dismissToast(id: number): void;
   importFiles(files: File[]): Promise<void>;
@@ -83,6 +91,7 @@ interface State {
   applyBookmark(b: Bookmark): void;
   addTemplatePage(id: string): void;
   dismissSchemaNotice(): void;
+  dismissAutoNotice(): void;
 }
 
 function readPref<T extends string>(key: string, fallback: T): T {
@@ -118,7 +127,7 @@ export const useStore = create<State>((set, get) => {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       const s = get();
-      if (!s.projectId || !s.table) return;
+      if (!s.projectId || !s.table || s.privateMode) return;
       void saveProject({
         id: s.projectId, name: s.report?.title ?? s.projectName, updatedAt: Date.now(), rowCount: s.table.rowCount, columnCount: s.table.columns.length,
         raws: s.raws, combine: s.combine, locale: s.locale, steps: s.steps, disabledFindings: s.disabled, report: s.report,
@@ -136,7 +145,7 @@ export const useStore = create<State>((set, get) => {
     set({
       projectId: opts.id ?? newId('r'), projectName: opts.name ?? table.name, raws, combine, locale, base: table, inferred, findings,
       quality: qualityScore(table, findings), disabled, steps, redoSteps: [], table: cleanTable, pending: null,
-      report: opts.report ?? null, engine: null, slicers: [], selection: null, selectedVisual: null, undoStack: [], redoStack: [], schemaNotice: null,
+      report: opts.report ?? null, engine: null, slicers: [], selection: null, selectedVisual: null, undoStack: [], redoStack: [], schemaNotice: null, autoNotice: null,
     });
   };
 
@@ -145,21 +154,42 @@ export const useStore = create<State>((set, get) => {
     if (engine && r) { engine.setMeasures(r.measures); engine.setParams(r.parameters); }
   };
 
+  /** Automatic mode: corrections are applied and the report opens with no review step. */
+  const autoGenerate = async (found: RawTable[]) => {
+    set({ busy: { message: 'Building your report' } });
+    await new Promise((r) => setTimeout(r, 30));
+    try {
+      const pick = chooseTables(found);
+      startProject(pick.tables, pick.combine);
+      get().buildReport();
+      const s = get();
+      set({ autoNotice: summarizeAuto(pick, s.findings, s.disabled, s.table?.rowCount ?? 0), busy: null });
+    } catch {
+      set({ busy: null, pending: found });
+      get().toast('error', 'The report could not be built automatically. Choose the tables to continue.');
+    }
+  };
+
   return {
     route: 'home',
     themeMode: readPref<ThemeMode>('srw-theme', 'system'),
     palette: readPref<PaletteName>('srw-palette', 'standard'),
     patterns: readPref<string>('srw-patterns', 'off') === 'on',
+    autoMode: readPref<string>('srw-auto', 'off') === 'on',
+    privateMode: readPref<string>('srw-private', 'off') === 'on',
     busy: null, toasts: [], pending: null,
     projectId: null, projectName: '', raws: [], combine: { mode: 'single' }, locale: DEFAULT_LOCALE,
     base: null, inferred: [], findings: [], quality: null, disabled: [], steps: [], redoSteps: [], table: null,
     engine: null, report: null, pageId: null, selectedVisual: null, slicers: [], selection: null, interaction: 'filter',
-    undoStack: [], redoStack: [], schemaNotice: null, revision: 0,
+    undoStack: [], redoStack: [], schemaNotice: null, autoNotice: null, revision: 0,
 
     setRoute: (route) => { set({ route }); if (location.hash !== `#/${route === 'home' ? '' : route}`) location.hash = `/${route === 'home' ? '' : route}`; },
     setTheme: (themeMode) => { writePref('srw-theme', themeMode); set({ themeMode }); },
     setPalette: (palette) => { writePref('srw-palette', palette); set({ palette }); },
     setPatterns: (patterns) => { writePref('srw-patterns', patterns ? 'on' : 'off'); set({ patterns }); },
+    setAutoMode: (autoMode) => { writePref('srw-auto', autoMode ? 'on' : 'off'); set({ autoMode }); },
+    setPrivateMode: (privateMode) => { clearTimeout(saveTimer); writePref('srw-private', privateMode ? 'on' : 'off'); set({ privateMode }); },
+    deleteSavedData: async () => { clearTimeout(saveTimer); await deleteAllProjects(); },
     toast: (kind, text) => {
       const id = ++toastId;
       set((s) => ({ toasts: [...s.toasts, { id, kind, text }] }));
@@ -184,6 +214,7 @@ export const useStore = create<State>((set, get) => {
           get().toast('error', (e as Error).message);
         }
       }
+      if (found.length && get().autoMode) { await autoGenerate(found); return; }
       set({ busy: null });
       if (!found.length) return;
       if (found.length === 1 && !found[0].confidence) { get().confirmImport(found, { mode: 'single' }); return; }
@@ -331,6 +362,7 @@ export const useStore = create<State>((set, get) => {
       set({ pageId: page.id });
     },
     dismissSchemaNotice: () => set({ schemaNotice: null }),
+    dismissAutoNotice: () => set({ autoNotice: null }),
   };
 });
 

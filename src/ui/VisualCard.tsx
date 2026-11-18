@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { memo, useMemo, useState } from 'react';
 import { ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, Calculator, ChevronRight, CornerLeftUp, Download, Minus, MoreHorizontal, Table2, Trash2, Copy } from 'lucide-react';
 import { formatCell, formatNumber, formatPct } from '../core/format';

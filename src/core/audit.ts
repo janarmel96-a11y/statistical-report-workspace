@@ -1,3 +1,4 @@
+// Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import type { InferredColumn } from './parse';
 import { getColumn } from './recipe';
 import type { Cell, CellChange, Column, DataTable, Finding, Step } from './types';
@@ -227,6 +228,13 @@ export function runAudit(t: DataTable, inferred: InferredColumn[] = []): Finding
       title: `${changes.length.toLocaleString()} wrong calculation${changes.length > 1 ? 's' : ''} corrected in ${target.name}`,
       detail: `${Math.round(rule.rate * 100)}% of rows follow ${target.name} = ${rule.label}. ${wrong} value${wrong === 1 ? '' : 's'} disagreed${blanks ? ` and ${blanks} ${blanks === 1 ? 'was' : 'were'} missing` : ''}. For example, row ${eg.row + 2} changed from ${fmt(eg.before)} to ${fmt(eg.after)}.`,
     });
+  }
+
+  for (const f of findings) {
+    if (f.kind === 'sheet-error' && rules.some((r) => r.target === f.column)) {
+      f.auto = true;
+      f.detail = 'Cells such as #DIV/0! or #REF! were recalculated using the formula that the rest of this column follows.';
+    }
   }
 
   /* 4. Duplicates ------------------------------------------------------------------------------ */
