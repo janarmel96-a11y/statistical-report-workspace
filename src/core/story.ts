@@ -173,7 +173,8 @@ export function describeVisual(en: Engine, v: Visual, pageCs: Constraint[]): Vis
   // A blank means the value was never recorded, so it is reported separately and never ranked as a group.
   const pts = r.categories.map((c, i) => ({ label: c.label, y: r.series[0].data[i], other: c.isOther || c.key === null }))
     .filter((p): p is { label: string; y: number; other: boolean } => p.y !== null && !p.other).sort((a, b) => b.y - a.y);
-  if (!pts.length) return null;
+  // One group has nothing to compare, which happens when a report is narrowed to a single area.
+  if (pts.length < 2) return null;
   const top = pts[0];
   const bottom = pts[pts.length - 1];
   const whole = en.isAdditive(value) ? en.evaluate(value, cs) : null;
@@ -217,7 +218,7 @@ export function buildStory(en: Engine, report: ReportDoc, findings: Finding[], c
   const range = dates.length ? `from ${new Date(dates.reduce((a, b) => (b < a ? b : a))).toISOString().slice(0, 10)} to ${new Date(dates.reduce((a, b) => (b > a ? b : a))).toISOString().slice(0, 10)}` : '';
   add({
     kind: 'title', kicker: 'Data report', title: report.title,
-    bullets: [`${rows.length.toLocaleString('en-US')} records${range ? ` ${range}` : ''}`],
+    bullets: [`${rows.length.toLocaleString('en-US')} records${range ? ` ${range}` : ''}${opts.filterText !== 'None' ? `. Showing ${opts.filterText}` : ''}`],
     narration: `Good day, and welcome to the statistical review of ${report.title}. This analysis covers ${rows.length.toLocaleString('en-US')} records${range ? ` ${range}` : ''}${opts.filterText !== 'None' ? `, filtered to ${opts.filterText}` : ''}. We will review the key figures, the main patterns, and the recommended next steps.`,
   });
 

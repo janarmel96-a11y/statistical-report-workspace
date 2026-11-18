@@ -31,6 +31,9 @@ export function vizTheme(dark: boolean, palette: keyof typeof SERIES): VizTheme 
     : { dark, surface: '#fcfcfb', ink: '#0b0b0b', secondary: '#52514e', muted: '#898781', grid: '#e1e0d9', axis: '#c3c2b7', series: SERIES[palette].light, neutral: '#c3c2b7', up: '#2a78d6', down: '#e34948', seq: ['#cde2fb', '#86b6ef', '#2a78d6', '#0d366b'] };
 }
 
+/** Uses the chart colors of the chosen report design. */
+export const designTheme = (base: VizTheme, series: string[] | null): VizTheme => (series ? { ...base, series, up: series[0] } : base);
+
 /* Color follows the entity, so filtering never repaints the survivors. */
 const colorOrder = new WeakMap<Engine, Map<string, Map<Cell, number>>>();
 
@@ -46,7 +49,7 @@ function entityColor(en: Engine, field: FieldRef, key: Cell, t: VizTheme): strin
     byField.set(id, order);
   }
   const i = order.get(key) ?? 0;
-  return i < 8 ? t.series[i] : t.neutral;
+  return i < t.series.length ? t.series[i] : t.neutral;
 }
 
 function axisBase(t: VizTheme) {
@@ -125,7 +128,7 @@ function barLike(en: Engine, v: Visual, cs: Constraint[], t: VizTheme, sel: Sele
   const multi = r.series.length > 1;
 
   const series: Record<string, unknown>[] = r.series.map((s, i) => {
-    const color = v.legend ? entityColor(en, v.legend, s.key, t) : t.series[i % 8];
+    const color = v.legend ? entityColor(en, v.legend, s.key, t) : t.series[i % t.series.length];
     const data = s.data.map((d, k) => ({
       value: d,
       itemStyle: selected && !selected.has(keys[k]) ? { opacity: 0.28 } : r.categories[k].isOther ? { color: t.neutral } : undefined,
@@ -282,7 +285,7 @@ function treemap(en: Engine, v: Visual, cs: Constraint[], t: VizTheme, sel: Sele
       series: [{
         type: 'treemap', left: 0, right: 0, top: 0, bottom: 0, roam: false, nodeClick: false, breadcrumb: { show: false }, itemStyle: { borderColor: t.surface, borderWidth: 2, gapWidth: 2, borderRadius: 4 },
         label: { show: true, color: '#fff', fontSize: 12, formatter: (p: { name: string; value: number }) => `${p.name}\n${formatPct(p.value / (total || 1), 1)}`, overflow: 'truncate' },
-        data: r.categories.map((c, i) => ({ name: c.label, idx: i, value: Math.max(0, r.series[0].data[i] ?? 0), itemStyle: { color: c.isOther ? t.dark ? '#5b5a55' : '#898781' : t.dark ? '#256abf' : '#2a78d6', opacity: selected && !selected.has(c.key) ? 0.3 : 1 } })),
+        data: r.categories.map((c, i) => ({ name: c.label, idx: i, value: Math.max(0, r.series[0].data[i] ?? 0), itemStyle: { color: c.isOther ? t.dark ? '#5b5a55' : '#898781' : t.dark ? '#256abf' : t.series[0], opacity: selected && !selected.has(c.key) ? 0.3 : 1 } })),
       }],
     },
   };

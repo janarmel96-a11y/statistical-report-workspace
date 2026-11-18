@@ -14,6 +14,7 @@ import { anova, chiSquare, kruskalWallis, mannWhitney, meanCI, welchT, type Test
 import type { Agg, Cell, Column, Constraint, DatePart, FieldRef, Measure, NumberFormat, ValueRef } from '../core/types';
 import { useStore } from '../state/store';
 import { AssistantPanel } from './AssistantPanel';
+import { DesignPanel } from './DesignPanel';
 import { StatsPanel } from './StatsPanel';
 import { InsightsList } from './VisualCard';
 
@@ -370,17 +371,18 @@ function DataTab() {
   );
 }
 
-const TABS = ['Assistant', 'Fields', 'Findings', 'Measures', 'Stats', 'Data'] as const;
+const TABS = ['Design', 'Assistant', 'Fields', 'Findings', 'Measures', 'Stats', 'Data'] as const;
+export type SideTab = (typeof TABS)[number];
 
-export function SidePanel({ visual, cs, onClose }: { visual: Visual | undefined; cs: Constraint[]; onClose: () => void }) {
-  const [tab, setTab] = useState<(typeof TABS)[number]>('Fields');
+export function SidePanel({ visual, cs, tab, onTab, onClose }: { visual: Visual | undefined; cs: Constraint[]; tab: SideTab; onTab: (t: SideTab) => void; onClose: () => void }) {
   return (
     <aside className="side" aria-label="Report tools">
       <div className="side-tabs" role="tablist">
-        {TABS.map((t) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t}</button>)}
+        {TABS.map((t) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => onTab(t)}>{t}</button>)}
         <button className="icon-btn sm side-close" aria-label="Close panel" onClick={onClose}><X size={15} /></button>
       </div>
       <div className="side-body" role="tabpanel">
+        {tab === 'Design' && <DesignPanel />}
         {tab === 'Assistant' && <AssistantPanel cs={cs} />}
         {tab === 'Fields' && <FieldsTab key={visual?.id} visual={visual} />}
         {tab === 'Findings' && <InsightsList cs={cs} limit={20} />}

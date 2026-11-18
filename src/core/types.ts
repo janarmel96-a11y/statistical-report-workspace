@@ -68,6 +68,7 @@ export type Step =
   | { op: 'setRole'; col: string; role: ColRole }
   | { op: 'rename'; col: string; name: string }
   | { op: 'drop'; col: string }
+  | { op: 'dropColumns'; cols: string[] }
   | { op: 'fill'; col: string; strategy: FillStrategy; value?: Cell }
   | { op: 'dropMissing'; col: string }
   | { op: 'merge'; cols: string[]; sep: string; name: string; keep?: boolean }

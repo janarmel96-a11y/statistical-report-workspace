@@ -1,17 +1,21 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Responsive, WidthProvider, type Layout } from 'react-grid-layout';
 import {
-  AlertTriangle, ArrowLeft, Bookmark, Check, ChevronDown, Clapperboard, LockKeyhole, Download, Filter, Highlighter, PanelRight, Pencil, Plus, Printer, Redo2, RefreshCw, Search, SlidersHorizontal, Sparkles, Undo2, X,
+  AlertTriangle, ArrowLeft, ArrowRight, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Copy, LockKeyhole, Download, Filter, Highlighter, MonitorPlay, Palette, PanelRight, Pencil, Plus, Printer, Redo2, RefreshCw, Search, SlidersHorizontal, Sparkles, Undo2, X,
 } from 'lucide-react';
+import { clonePage, resolveDesign } from '../core/design';
 import { formatCell, formatNumber } from '../core/format';
 import { newId, recommendTemplates } from '../core/insights';
 import { fieldLabel, keyLabel, queryCategories, type Slicer, type Visual } from '../core/report';
 import type { Cell, FieldRef } from '../core/types';
 import { ACCEPT } from '../ingest';
 import { pageConstraints, useStore } from '../state/store';
-import { Logo, Modal, Popover, ThemeSwitch } from './common';
-import { SidePanel } from './SidePanel';
+import { AreaPicker } from './AreaPicker';
+import { Logo, Modal, Popover, ThemeSwitch, useDarkMode } from './common';
+import { FieldIcon } from './FieldIcon';
+import { ElementCard } from './PageElements';
+import { SidePanel, type SideTab } from './SidePanel';
 import { VisualCard, type DrillTarget } from './VisualCard';
 
 const Grid = WidthProvider(Responsive);
@@ -38,7 +42,7 @@ function SlicerControl({ field }: { field: FieldRef }) {
   return (
     <Popover label={`Filter by ${label}`} button={(open) => (
       <button className={`slicer ${values.length ? 'active' : ''}`} aria-expanded={open}>
-        <span>{label}</span><b>{values.length === 0 ? 'All' : values.length === 1 ? keyLabel(engine, field, values[0]) : `${values.length} selected`}</b><ChevronDown size={13} />
+        <FieldIcon text={field.col} size={12} /><span>{label}</span><b>{values.length === 0 ? 'All' : values.length === 1 ? keyLabel(engine, field, values[0]) : `${values.length} selected`}</b><ChevronDown size={13} />
       </button>
     )}>
       {() => (
@@ -72,6 +76,7 @@ function FilterBar() {
   return (
     <div className="filterbar" aria-label="Filters">
       <Filter size={15} className="muted" aria-hidden="true" />
+      <AreaPicker />
       {report.slicerFields.map((f) => <SlicerControl key={fieldLabel(f)} field={f} />)}
       {available.length > 0 && (
         <Popover label="Add a filter" button={() => <button className="btn sm ghost"><Plus size={14} /> Filter</button>}>
@@ -120,6 +125,11 @@ export function Report() {
   const engine = s.engine!;
   const page = report.pages.find((p) => p.id === s.pageId) ?? report.pages[0];
   const [side, setSide] = useState(() => innerWidth >= 1100);
+  const [sideTab, setSideTab] = useState<SideTab>('Fields');
+  const [presenting, setPresenting] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const dark = useDarkMode();
+  const look = useMemo(() => resolveDesign(report.design, dark), [report.design, dark]);
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [exporting, setExporting] = useState(false);
   const [video, setVideo] = useState(false);
@@ -141,10 +151,37 @@ export function Report() {
     return () => removeEventListener('keydown', key);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* Present mode shows one report page at a time on the full screen. */
+  const pageIndex = report.pages.findIndex((p) => p.id === page?.id);
+  const stepPage = useCallback((by: number) => {
+    const st = useStore.getState();
+    const pages = st.report?.pages ?? [];
+    const at = pages.findIndex((p) => p.id === st.pageId);
+    const next = pages[Math.max(0, Math.min(pages.length - 1, at + by))];
+    if (next) st.setPage(next.id);
+  }, []);
+  const startPresenting = () => { s.selectVisual(null); setPresenting(true); void root.current?.requestFullscreen?.().catch(() => undefined); };
+  const stopPresenting = useCallback(() => { setPresenting(false); if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined); }, []);
+  useEffect(() => {
+    if (!presenting) return;
+    const key = (e: KeyboardEvent) => {
+      if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); stepPage(1); }
+      if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); stepPage(-1); }
+      if (e.key === 'Escape') stopPresenting();
+    };
+    let wasFull = false;
+    const screen = () => { if (document.fullscreenElement) wasFull = true; else if (wasFull) setPresenting(false); };
+    addEventListener('keydown', key);
+    document.addEventListener('fullscreenchange', screen);
+    return () => { removeEventListener('keydown', key); document.removeEventListener('fullscreenchange', screen); };
+  }, [presenting, stepPage, stopPresenting]);
+  useEffect(() => { dispatchEvent(new Event('resize')); }, [presenting, side]);
+
+  const elements = page?.elements ?? [];
   const layouts = useMemo(() => ({
     lg: page?.layout ?? [],
-    sm: (page?.visuals ?? []).map((v, i) => { const l = page.layout.find((x) => x.i === v.id); return { i: v.id, x: 0, y: i * 10, w: 1, h: v.type === 'kpi' ? 3 : Math.max(8, l?.h ?? 8) }; }),
-  }), [page?.id, page?.layout, page?.visuals]); // eslint-disable-line react-hooks/exhaustive-deps
+    sm: [...(page?.visuals ?? []).map((v) => ({ id: v.id, kpi: v.type === 'kpi' })), ...(page?.elements ?? []).map((e) => ({ id: e.id, kpi: false }))].map((v, i) => { const l = page.layout.find((x) => x.i === v.id); return { i: v.id, x: 0, y: i * 10, w: 1, h: v.kpi ? 3 : Math.max(3, l?.h ?? 8) }; }),
+  }), [page?.id, page?.layout, page?.visuals, page?.elements]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onLayout = useCallback((current: Layout[]) => {
     if (innerWidth < 760) return;
@@ -167,8 +204,11 @@ export function Report() {
 
   if (!page) return null;
   const templates = recommendTemplates(engine);
+  const brand = look.design;
+  const movePage = (by: number) => s.mutateReport((r) => { const next = [...r.pages]; const j = pageIndex + by; [next[pageIndex], next[j]] = [next[j], next[pageIndex]]; return { ...r, pages: next }; });
+  const copyPage = () => { const copy = clonePage(page, () => newId('c')); s.mutateReport((r) => { const next = [...r.pages]; next.splice(pageIndex + 1, 0, copy); return { ...r, pages: next }; }); s.setPage(copy.id); };
   return (
-    <div className="report">
+    <div ref={root} className={`report ${look.className} ${presenting ? 'presenting' : ''}`} style={look.vars as CSSProperties}>
       <header className="topbar no-print">
         <button className="icon-btn" aria-label="Back to home" title="Back to home" onClick={() => s.setRoute('home')}><ArrowLeft size={18} /></button>
         <Logo />
@@ -196,11 +236,10 @@ export function Report() {
           )}
         </Popover>
         <button className="icon-btn" aria-label="Print" title="Print" onClick={() => print()}><Printer size={17} /></button>
-        <select className="palette" aria-label="Chart colors" value={`${s.palette}${s.patterns ? '+p' : ''}`} onChange={(e) => { const [p, q] = e.target.value.split('+'); s.setPalette(p as 'standard' | 'bright'); s.setPatterns(q === 'p'); }}>
-          <option value="standard">Colors: Standard</option><option value="bright">Colors: Warm first</option><option value="standard+p">Colors: With patterns</option>
-        </select>
         <ThemeSwitch />
         <button className="icon-btn" aria-label="Toggle side panel" aria-pressed={side} title="Toggle side panel" onClick={() => setSide(!side)}><PanelRight size={17} /></button>
+        {s.accessRole !== 'viewer' && <button className={`btn ghost ${side && sideTab === 'Design' ? 'active' : ''}`} onClick={() => { setSideTab('Design'); setSide(true); }}><Palette size={15} /> Design</button>}
+        <button className="btn ghost" onClick={startPresenting}><MonitorPlay size={15} /> Present</button>
         <button className="btn ghost" onClick={() => setVideo(true)}><Clapperboard size={15} /> Video</button>
         <button className="btn primary" onClick={() => setExporting(true)}><Download size={15} /> Download</button>
       </header>
@@ -239,6 +278,12 @@ export function Report() {
 
       <div className="report-body">
         <main className="canvas">
+          {(brand.logo || brand.organization || presenting) && (
+            <header className="report-brand">
+              {brand.logo && <img src={brand.logo} alt={brand.organization ? `${brand.organization} logo` : 'Organization logo'} />}
+              <div>{brand.organization && <small>{brand.organization}</small>}{presenting && <h1>{report.title}<span> · {page.name}</span></h1>}</div>
+            </header>
+          )}
           <nav className="pages no-print" aria-label="Report pages">
             {report.pages.map((p) => (
               renaming === p.id ? (
@@ -256,21 +301,33 @@ export function Report() {
               </>}
             </Popover>
             <div className="spacer" />
+            <button className="icon-btn sm" aria-label="Move page left" title="Move page left" disabled={pageIndex <= 0} onClick={() => movePage(-1)}><ChevronLeft size={15} /></button>
+            <button className="icon-btn sm" aria-label="Move page right" title="Move page right" disabled={pageIndex >= report.pages.length - 1} onClick={() => movePage(1)}><ChevronRight size={15} /></button>
+            <button className="icon-btn sm" aria-label="Duplicate page" title="Duplicate page" onClick={copyPage}><Copy size={14} /></button>
             {report.pages.length > 1 && <button className="link" onClick={() => { const rest = report.pages.filter((p) => p.id !== page.id); s.mutateReport((r) => ({ ...r, pages: rest })); s.setPage(rest[0].id); }}>Delete page</button>}
             <button className="btn sm" onClick={addVisual}><Plus size={14} /> Add visual</button>
           </nav>
           <FilterBar />
-          {page.visuals.length === 0 ? (
+          {page.visuals.length === 0 && elements.length === 0 ? (
             <div className="blank-page"><Check size={20} /><p>This page is empty.</p><button className="btn primary" onClick={addVisual}><Plus size={15} /> Add a visual</button></div>
           ) : (
             <Grid key={page.id} className="bento" layouts={layouts} breakpoints={{ lg: 760, sm: 0 }} cols={{ lg: 12, sm: 1 }} rowHeight={26} margin={[12, 12]} containerPadding={[0, 0]}
-              draggableHandle=".card-drag" draggableCancel=".card-tools,button,select,input" onLayoutChange={onLayout} measureBeforeMount={false} useCSSTransforms>
+              draggableHandle=".card-drag" draggableCancel=".card-tools,button,select,input" onLayoutChange={onLayout} measureBeforeMount={false} useCSSTransforms isDraggable={!presenting} isResizable={!presenting}>
               {page.visuals.map((v) => <div key={v.id}><VisualCard visual={v} onDrillThrough={setDrill} /></div>)}
+              {elements.map((e) => <div key={e.id} onMouseDown={() => { if (!presenting) { setSideTab('Design'); setSide(true); } }}><ElementCard el={e} /></div>)}
             </Grid>
           )}
         </main>
-        {side && <SidePanel visual={selected} cs={cs} onClose={() => setSide(false)} />}
+        {side && !presenting && <SidePanel visual={selected} cs={cs} tab={sideTab} onTab={setSideTab} onClose={() => setSide(false)} />}
       </div>
+      {presenting && (
+        <nav className="present-bar" aria-label="Presentation controls">
+          <button className="icon-btn" aria-label="Previous page" disabled={pageIndex <= 0} onClick={() => stepPage(-1)}><ArrowLeft size={17} /></button>
+          <span role="status">{pageIndex + 1} / {report.pages.length}</span>
+          <button className="icon-btn" aria-label="Next page" disabled={pageIndex >= report.pages.length - 1} onClick={() => stepPage(1)}><ArrowRight size={17} /></button>
+          <button className="btn sm" onClick={stopPresenting}><X size={14} /> Exit</button>
+        </nav>
+      )}
       {drill && <DrillThrough target={drill} onClose={() => setDrill(null)} />}
       {video && <Suspense fallback={null}><VideoStudio onClose={() => setVideo(false)} /></Suspense>}
       {exporting && <Suspense fallback={null}><ExportDialog onClose={() => setExporting(false)} onVideo={() => { setExporting(false); setVideo(true); }} /></Suspense>}

@@ -2,10 +2,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Captions, Copy, Download, ImagePlus, LayoutGrid, Mic, Pause, Play, Plus, Redo2, RotateCcw, SkipBack, Square, Trash2, Undo2, Video, Volume2, X } from 'lucide-react';
 import { emptyMemory, suggestImprovements } from '../core/assistant';
-import { keyLabel } from '../core/report';
 import { buildStory, type DetailLevel } from '../core/story';
 import { chartImages, download, safeFileName, type ExportContext } from '../export/reportExports';
-import { filterSummary, pageConstraints, useStore } from '../state/store';
+import { filterSummary, pageConstraints, slicerText, useStore } from '../state/store';
 import { canExportVideo, encodeVideo, renderAudio } from '../video/encode';
 import { moveBox, newScene, resizeBox, sceneSeconds, sizeOf, STYLES, subtitles, timelineOf, toVideoScenes, type Animation, type Box, type BoxName, type Handle, type Music, type Quality, type Transition, type VideoFormat, type VideoProject, type VideoScene } from '../video/project';
 import { drawFrame, sceneBoxes, type Assets } from '../video/render';
@@ -23,7 +22,7 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
   const ctx = useMemo<ExportContext>(() => ({
     report, engine, table: engine.table, findings: s.findings.filter((f) => !s.disabled.includes(f.id)),
     constraints: pageConstraints(s.slicers, s.selection),
-    filterText: filterSummary(s.slicers, s.selection, (x) => `${x.col}: ${x.values.map((v) => keyLabel(engine, { col: x.col, part: x.part }, v)).join(', ')}`),
+    filterText: filterSummary(s.slicers, s.selection, slicerText(engine)),
     palette: s.palette,
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 

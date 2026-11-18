@@ -80,6 +80,7 @@ export function describeStep(s: Step): string {
     case 'setRole': return `Set how ${s.col} is used to ${s.role}`;
     case 'rename': return `Renamed ${s.col} to ${s.name}`;
     case 'drop': return `Removed column ${s.col}`;
+    case 'dropColumns': return `Removed ${s.cols.length} column${s.cols.length === 1 ? '' : 's'}: ${s.cols.join(', ')}`;
     case 'fill': return `Filled blanks in ${s.col} using ${s.strategy}`;
     case 'dropMissing': return `Removed rows with a blank ${s.col}`;
     case 'merge': return `Merged ${s.cols.join(', ')} into ${s.name}`;
@@ -130,6 +131,7 @@ export function applyStep(t: DataTable, s: Step): DataTable {
       if (!getColumn(t, s.col) || !s.name.trim() || getColumn(t, s.name.trim())) return t;
       return setCol(t, s.col, { name: s.name.trim() });
     case 'drop': return { ...t, columns: t.columns.filter((c) => c.name !== s.col) };
+    case 'dropColumns': return { ...t, columns: t.columns.filter((c) => !s.cols.includes(c.name)) };
     case 'fill': {
       const c = getColumn(t, s.col);
       if (!c) return t;

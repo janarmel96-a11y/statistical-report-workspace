@@ -2,13 +2,16 @@
 import { memo, useMemo, useState } from 'react';
 import { ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, Calculator, ChevronRight, CornerLeftUp, Download, Minus, MoreHorizontal, Table2, Trash2, Copy } from 'lucide-react';
 import { formatCell, formatNumber, formatPct } from '../core/format';
+import { resolveDesign } from '../core/design';
 import { generateInsights, newId, type Insight } from '../core/insights';
 import { activeField, keyLabel, OTHER, queryCategories, queryKpi, queryRange, visualConstraints, visualTable, type Visual, type VisualTable } from '../core/report';
 import type { Cell, Constraint, FieldRef } from '../core/types';
 import { filterSummary, pageConstraints, useStore } from '../state/store';
-import { buildChart, vizTheme } from './chartOptions';
+import { buildChart, designTheme, vizTheme } from './chartOptions';
 import { Popover, Sparkline, useDarkMode } from './common';
 import { EChart, type ChartEvent } from './EChart';
+import { FieldIcon } from './FieldIcon';
+import { IconBreakdown } from './PageElements';
 
 export interface DrillTarget { field: FieldRef; key: Cell; label: string; constraints: Constraint[]; title: string }
 
@@ -61,7 +64,7 @@ function InsightItem({ i }: { i: Insight }) {
   const [open, setOpen] = useState(false);
   return (
     <li className={`insight ${i.kind}`}>
-      <b>{i.headline}</b>
+      <b className="insight-head"><FieldIcon text={i.headline} size={14} /> {i.headline}</b>
       <p>{i.text}</p>
       <button className="link" aria-expanded={open} onClick={() => setOpen(!open)}><Calculator size={13} /> {open ? 'Hide calculation' : 'How this was calculated'}</button>
       {open && (
@@ -118,7 +121,7 @@ export const VisualCard = memo(function VisualCard({ visual: v, onDrillThrough }
   const cs = useMemo(() => visualConstraints(v, pageCs), [v, pageCs]);
   const highlight = useMemo(() => (interaction === 'highlight' && selection && selection.visualId !== v.id
     ? pageConstraints(slicers, selection, undefined, 'filter') : null), [interaction, selection, slicers, v.id]);
-  const theme = useMemo(() => vizTheme(dark, palette), [dark, palette]);
+  const theme = useMemo(() => designTheme(vizTheme(dark, palette), resolveDesign(report.design, dark).series), [dark, palette, report.design]);
   const isChart = !['kpi', 'table', 'insights'].includes(v.type);
   const build = useMemo(() => (isChart ? buildChart(engine, v, pageCs, theme, selection, highlight) : null),
     [engine, v, pageCs, theme, selection, highlight, isChart, revision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -166,14 +169,15 @@ export const VisualCard = memo(function VisualCard({ visual: v, onDrillThrough }
     if (v.type === 'table') return <DataTableVisual v={v} cs={pageCs} />;
     if (v.type === 'insights') return <InsightsList cs={cs} />;
     if (build?.meta.empty) return <p className="empty-note">{build.meta.note}</p>;
-    return <EChart option={build!.option} label={`${v.title}. Open the table view for exact values.`} patterns={patterns} onClick={onPoint} onContext={onContext} />;
+    const chart = <EChart option={build!.option} label={`${v.title}. Open the table view for exact values.`} patterns={patterns} onClick={onPoint} onContext={onContext} />;
+    return field && /^(sex|gender)$/i.test(field.col.trim()) ? <><div className="chart-with-icons">{chart}</div><IconBreakdown col={field.col} cs={pageCs} compact /></> : chart;
   };
 
   return (
     <article className={`card ${v.type} ${selected ? 'selected' : ''}`} onMouseDown={() => select(v.id)} aria-label={v.title}>
       <header className="card-head">
         <div className="card-drag">
-          <h3 title={v.title}>{v.title}</h3>
+          <h3 title={v.title}><FieldIcon text={v.title} size={v.type === 'kpi' ? 17 : 14} className={v.type === 'kpi' ? 'kpi-badge' : ''} /> <span>{v.title}</span></h3>
           {isChart && !!v.drillPath?.length && <nav className="crumbs" aria-label="Drill path">{v.drillPath.map((d, i) => <span key={i}><ChevronRight size={11} />{d.label}</span>)}</nav>}
         </div>
         <div className="card-tools">

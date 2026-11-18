@@ -1,6 +1,6 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useMemo, useRef, useState } from 'react';
-import { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Info, Redo2, Undo2 } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Info, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { formatCell, formatPct } from '../core/format';
 import { measureKind } from '../core/analytics';
 import { profileColumn } from '../core/insights';
@@ -121,7 +121,7 @@ function ColumnTools({ col }: { col: Column }) {
   );
 }
 
-function DataGrid({ selected, onSelect }: { selected: string | null; onSelect: (c: string) => void }) {
+function DataGrid({ selected, onSelect, marked, onMark }: { selected: string | null; onSelect: (c: string) => void; marked: string[]; onMark: (c: string, range: boolean) => void }) {
   const table = useStore((s) => s.table)!;
   const findings = useStore((s) => s.findings);
   const disabled = useStore((s) => s.disabled);
@@ -148,11 +148,14 @@ function DataGrid({ selected, onSelect }: { selected: string | null; onSelect: (
         <div className="grid-head" style={{ width }} role="row">
           <div className="grid-rownum head">#</div>
           {table.columns.map((c, i) => (
-            <button key={c.name} role="columnheader" className={`grid-th ${selected === c.name ? 'on' : ''}`} style={{ width: COL_W }} onClick={() => onSelect(c.name)} title={`${c.name}: select to edit`}>
-              <span className="th-name">{c.name}</span>
-              <span className="th-meta"><em className={`type-${c.type}`}>{TYPES.find(([t]) => t === c.type)?.[1]}</em>{profiles[i].missing > 0 ? <small>{formatPct(profiles[i].missing, 0)} blank</small> : <small>Complete</small>}</span>
-              <span className="th-bar"><i style={{ width: `${(1 - profiles[i].missing) * 100}%` }} /></span>
-            </button>
+            <div key={c.name} role="none" className={`grid-th-wrap ${marked.includes(c.name) ? 'marked' : ''}`} style={{ width: COL_W }}>
+              <button role="columnheader" className={`grid-th ${selected === c.name ? 'on' : ''}`} style={{ width: COL_W }} onClick={() => onSelect(c.name)} title={`${c.name}: select to edit`}>
+                <span className="th-name">{c.name}</span>
+                <span className="th-meta"><em className={`type-${c.type}`}>{TYPES.find(([t]) => t === c.type)?.[1]}</em>{profiles[i].missing > 0 ? <small>{formatPct(profiles[i].missing, 0)} blank</small> : <small>Complete</small>}</span>
+                <span className="th-bar"><i style={{ width: `${(1 - profiles[i].missing) * 100}%` }} /></span>
+              </button>
+              <input type="checkbox" className="th-check" aria-label={`Select column ${c.name}`} title="Select this column. Hold Shift to select a range." checked={marked.includes(c.name)} readOnly onClick={(e) => onMark(c.name, e.shiftKey)} />
+            </div>
           ))}
         </div>
         {rows.map((r) => (
@@ -163,7 +166,7 @@ function DataGrid({ selected, onSelect }: { selected: string | null; onSelect: (
               const key = `${table.rowIds[r]}|${c.name}`;
               const fixed = changed.has(key);
               return (
-                <div key={c.name} role="gridcell" style={{ width: COL_W }} className={`grid-td ${c.type === 'number' ? 'num' : ''} ${v === null ? 'blank' : ''} ${fixed ? 'fixed' : ''} ${selected === c.name ? 'sel' : ''}`}
+                <div key={c.name} role="gridcell" style={{ width: COL_W }} className={`grid-td ${c.type === 'number' ? 'num' : ''} ${v === null ? 'blank' : ''} ${fixed ? 'fixed' : ''} ${selected === c.name ? 'sel' : ''} ${marked.includes(c.name) ? 'marked' : ''}`}
                   title={fixed ? `Corrected. Original value: ${changed.get(key) ?? 'blank'}` : undefined}>
                   {v === null ? 'blank' : formatCell(v, c)}
                 </div>
@@ -199,6 +202,26 @@ export function Prepare() {
   const s = useStore();
   const table = s.table!;
   const [selected, setSelected] = useState<string | null>(null);
+  const [ticked, setTicked] = useState<string[]>([]);
+  const anchor = useRef<string | null>(null);
+  const names = table.columns.map((c) => c.name);
+  const marked = ticked.filter((n) => names.includes(n));
+  const allMarked = marked.length === names.length;
+  const mark = (name: string, range: boolean) => {
+    const on = !marked.includes(name);
+    const [from, to] = [names.indexOf(anchor.current ?? ''), names.indexOf(name)];
+    const group = range && from >= 0 ? names.slice(Math.min(from, to), Math.max(from, to) + 1) : [name];
+    setTicked(on ? [...new Set([...marked, ...group])] : marked.filter((n) => !group.includes(n)));
+    anchor.current = name;
+  };
+  const removeMarked = () => {
+    const n = marked.length;
+    s.addStep({ op: 'dropColumns', cols: marked });
+    s.toast('success', `Removed ${n} column${n === 1 ? '' : 's'}. Select Undo to bring ${n === 1 ? 'it' : 'them'} back.`);
+    if (selected && marked.includes(selected)) setSelected(null);
+    setTicked([]);
+    anchor.current = null;
+  };
   const col = table.columns.find((c) => c.name === selected);
   const q = s.quality;
   const errors = s.findings.filter((f) => f.severity === 'error').length;
@@ -242,7 +265,14 @@ export function Prepare() {
         </aside>
         <main className="staging">
           {col ? <><ColumnTools key={col.name} col={col} /><ColumnSummary col={col} rows={table.rowCount} /></> : <p className="staging-hint">Select a column heading to change its type, fill blanks, or merge and split it. Corrected cells are highlighted, and hovering shows the original value.</p>}
-          <DataGrid selected={selected} onSelect={setSelected} />
+          <div className="col-select-bar">
+            <label><input type="checkbox" aria-label="Select all columns" checked={allMarked} ref={(el) => { if (el) el.indeterminate = marked.length > 0 && !allMarked; }} onChange={() => { setTicked(allMarked ? [] : names); anchor.current = null; }} /> Select all</label>
+            <span role="status">{marked.length ? `${marked.length} of ${names.length} columns selected` : 'Tick column headings to remove several at once.'}{allMarked ? ' Keep at least one column.' : ''}</span>
+            <div className="spacer" />
+            {marked.length > 0 && <button className="btn sm" onClick={() => { setTicked([]); anchor.current = null; }}>Clear</button>}
+            <button className="btn sm danger" disabled={!marked.length || allMarked} onClick={removeMarked}><Trash2 size={14} /> Remove {marked.length ? `${marked.length} column${marked.length === 1 ? '' : 's'}` : 'columns'}</button>
+          </div>
+          <DataGrid selected={selected} onSelect={setSelected} marked={marked} onMark={mark} />
         </main>
       </div>
     </div>

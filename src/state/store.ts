@@ -1,5 +1,6 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { create } from 'zustand';
+import { listLabels } from '../core/areas';
 import { qualityScore, runAudit, type QualityScore } from '../core/audit';
 import { chooseTables, summarizeAuto, tableLabels, type AutoSummary } from '../core/autoReport';
 import { combineSources, matchColumns, toRawTable } from '../core/combine';
@@ -7,7 +8,7 @@ import { Engine } from '../core/engine';
 import { generateInsights, newId, newReport, recommendTemplates } from '../core/insights';
 import { inferTable, type InferredColumn } from '../core/parse';
 import { appendTables, applyRecipe, diffSchema, joinTables, reusableSteps, type SchemaDiff } from '../core/recipe';
-import type { Bookmark, Page, ReportDoc, Selection, Slicer, Visual } from '../core/report';
+import { keyLabel, type Bookmark, type Page, type ReportDoc, type Selection, type Slicer, type Visual } from '../core/report';
 import { DEFAULT_LOCALE, type Constraint, type DataTable, type Finding, type LocaleOptions, type RawTable, type Step } from '../core/types';
 import { readFile } from '../ingest';
 import type { AccessRole } from '../export/protectedFile';
@@ -50,6 +51,7 @@ interface State {
   report: ReportDoc | null;
   pageId: string | null;
   selectedVisual: string | null;
+  selectedElement: string | null;
   slicers: Slicer[];
   selection: Selection | null;
   interaction: 'filter' | 'highlight';
@@ -90,6 +92,7 @@ interface State {
   redoReport(): void;
   setPage(id: string): void;
   selectVisual(id: string | null): void;
+  selectElement(id: string | null): void;
   setSlicer(s: Slicer): void;
   clearFilters(): void;
   setSelection(s: Selection | null): void;
@@ -195,7 +198,7 @@ export const useStore = create<State>((set, get) => {
     busy: null, toasts: [], pending: null,
     projectId: null, projectName: '', raws: [], combine: { mode: 'single' }, locale: DEFAULT_LOCALE,
     base: null, inferred: [], findings: [], quality: null, disabled: [], steps: [], redoSteps: [], table: null,
-    engine: null, report: null, pageId: null, selectedVisual: null, slicers: [], selection: null, interaction: 'filter',
+    engine: null, report: null, pageId: null, selectedVisual: null, selectedElement: null, slicers: [], selection: null, interaction: 'filter',
     undoStack: [], redoStack: [], schemaNotice: null, autoNotice: null, revision: 0,
 
     setRoute: (route) => { set({ route }); if (location.hash !== `#/${route === 'home' ? '' : route}`) location.hash = `/${route === 'home' ? '' : route}`; },
@@ -371,8 +374,9 @@ export const useStore = create<State>((set, get) => {
       set((s) => ({ report: next, redoStack: redoStack.slice(0, -1), undoStack: [...undoStack, report], revision: s.revision + 1 }));
       persist();
     },
-    setPage: (pageId) => set({ pageId, selectedVisual: null, selection: null }),
-    selectVisual: (selectedVisual) => set({ selectedVisual }),
+    setPage: (pageId) => set({ pageId, selectedVisual: null, selectedElement: null, selection: null }),
+    selectVisual: (selectedVisual) => set({ selectedVisual, selectedElement: null }),
+    selectElement: (selectedElement) => set({ selectedElement, selectedVisual: null }),
     setSlicer: (sl) => set((s) => {
       const rest = s.slicers.filter((x) => !(x.col === sl.col && x.part === sl.part));
       return { slicers: sl.values.length ? [...rest, sl] : rest, revision: s.revision + 1 };
@@ -403,6 +407,9 @@ export function pageConstraints(slicers: Slicer[], selection: Selection | null, 
   }
   return cs;
 }
+
+/** Describes one filter for a report, slide, or narration. */
+export const slicerText = (en: Engine) => (x: Slicer) => `${x.col}: ${listLabels(x.values.map((v) => keyLabel(en, { col: x.col, part: x.part }, v)))}`;
 
 export function filterSummary(slicers: Slicer[], selection: Selection | null, label: (s: Slicer) => string): string {
   const parts = slicers.map(label);

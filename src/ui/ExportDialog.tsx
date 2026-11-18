@@ -3,9 +3,8 @@ import { useState, type ReactNode } from 'react';
 import { CheckCircle2, ExternalLink, FileBox, FileImage, FileJson, FileSpreadsheet, FileText, LockKeyhole, Presentation, Sheet, Table, Video } from 'lucide-react';
 import { exportPptx } from '../export/presentation';
 import { exportCsv, exportPdf, exportPng, exportProject, exportWorkbook, download, safeFileName, type ExportContext } from '../export/reportExports';
-import { keyLabel } from '../core/report';
 import { MIN_PASSCODE } from '../export/protectedFile';
-import { filterSummary, pageConstraints, useStore } from '../state/store';
+import { filterSummary, pageConstraints, slicerText, useStore } from '../state/store';
 import { Modal } from './common';
 
 type Kind = 'excel' | 'sheets' | 'pdf' | 'pptx' | 'png' | 'csv' | 'project' | 'protected';
@@ -56,7 +55,7 @@ export default function ExportDialog({ onClose, onVideo }: { onClose: () => void
     const ctx: ExportContext = {
       report: s.report!, engine, table: engine.table, findings: s.findings.filter((f) => !s.disabled.includes(f.id) || !f.steps.length),
       constraints: useFilters ? pageConstraints(s.slicers, s.selection) : [],
-      filterText: useFilters ? filterSummary(s.slicers, s.selection, (x) => `${x.col}: ${x.values.map((v) => keyLabel(engine, { col: x.col, part: x.part }, v)).join(', ')}`) : 'None',
+      filterText: useFilters ? filterSummary(s.slicers, s.selection, slicerText(engine)) : 'None',
       palette: s.palette, steps: s.steps,
     };
     setError(null); setDone(null); setBusy('Starting');
@@ -79,7 +78,7 @@ export default function ExportDialog({ onClose, onVideo }: { onClose: () => void
     <Modal wide title="Download report" onClose={onClose}>
       {hasFilters && (
         <fieldset className="scope"><legend>What to include</legend>
-          <label><input type="radio" checked={scope === 'filtered'} onChange={() => setScope('filtered')} /> Current filters</label>
+          <label><input type="radio" checked={scope === 'filtered'} onChange={() => setScope('filtered')} /> Selected areas and filters</label>
           <label><input type="radio" checked={scope === 'all'} onChange={() => setScope('all')} /> All data</label>
         </fieldset>
       )}

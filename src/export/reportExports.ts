@@ -5,7 +5,8 @@ import { generateInsights, profileTable } from '../core/insights';
 import { queryKpi, queryRange, visualConstraints, visualTable, type ReportDoc, type Visual } from '../core/report';
 import { auditTrail } from '../core/recipe';
 import type { Constraint, DataTable, Finding, Step } from '../core/types';
-import { buildChart, vizTheme } from '../ui/chartOptions';
+import { resolveDesign } from '../core/design';
+import { buildChart, designTheme, vizTheme } from '../ui/chartOptions';
 import { renderChartImage } from '../ui/EChart';
 import { buildCsv, buildWorkbook, type WorkbookInput } from './workbook';
 import { verifyWorkbook } from './verify';
@@ -43,7 +44,7 @@ const allVisuals = (r: ReportDoc): Visual[] => {
 interface ChartImage { visual: Visual; dataUrl: string; base64: string; width: number; height: number }
 
 export function chartImages(ctx: ExportContext): ChartImage[] {
-  const theme = vizTheme(false, ctx.palette);
+  const theme = designTheme(vizTheme(false, ctx.palette), resolveDesign(ctx.report.design, false).series);
   const out: ChartImage[] = [];
   for (const v of allVisuals(ctx.report)) {
     if (NO_CHART.has(v.type)) continue;
@@ -178,7 +179,7 @@ export async function exportPdf(ctx: ExportContext, progress: Progress) {
 export async function exportPng(ctx: ExportContext, visuals: Visual[], progress: Progress) {
   progress('Drawing charts');
   await nextFrame();
-  const theme = vizTheme(false, ctx.palette);
+  const theme = designTheme(vizTheme(false, ctx.palette), resolveDesign(ctx.report.design, false).series);
   const list = visuals.filter((v) => !NO_CHART.has(v.type)).flatMap((v) => {
     const b = buildChart(ctx.engine, v, ctx.constraints, theme, null, null);
     return b.meta.empty ? [] : [{ v, img: renderChartImage(b.option, 800, 460) }];

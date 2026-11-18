@@ -2,6 +2,7 @@
 import { bucketLabel, defaultAgg, Engine, groupConstraint, lastPeriodIncomplete, shiftYears } from './engine';
 import { boxStats, type BoxStats, forecast, type Forecast, histogram, type HistogramBin, pearson, linearFit } from './stats';
 import type { AssistantMemory } from './assistant';
+import type { PageElement, ReportDesign } from './design';
 import { formatDate } from './format';
 import type { Cell, Constraint, DatePart, FieldRef, Measure, NumberFormat, Parameter, Step, ValueRef } from './types';
 
@@ -30,7 +31,7 @@ export interface Visual {
 }
 
 export interface GridPos { i: string; x: number; y: number; w: number; h: number }
-export interface Page { id: string; name: string; visuals: Visual[]; layout: GridPos[] }
+export interface Page { id: string; name: string; visuals: Visual[]; layout: GridPos[]; elements?: PageElement[] }
 export interface Hierarchy { name: string; levels: string[] }
 
 export interface Selection { visualId: string; field: FieldRef; values: Cell[]; label: string }
@@ -48,6 +49,8 @@ export interface ReportDoc {
   recipe: Step[];
   /** What the report assistant has learned. It stays inside this report. */
   assistant?: AssistantMemory;
+  /** Colors, background, fonts, and branding chosen for this report. */
+  design?: ReportDesign;
 }
 
 export const fieldLabel = (f: FieldRef) => (f.part ? `${f.col} (${f.part})` : f.col);
