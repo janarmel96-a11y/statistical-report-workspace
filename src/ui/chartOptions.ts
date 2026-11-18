@@ -115,7 +115,8 @@ function barLike(en: Engine, v: Visual, cs: Constraint[], t: VizTheme, sel: Sele
   const horizontal = v.type === 'bar';
   const stacked = v.type === 'stacked' || (v.type === 'area' && Boolean(v.legend));
   const isLine = v.type === 'line' || v.type === 'area';
-  const r = queryCategories(en, field, v.values, cs, { legend: v.legend, topN: v.topN ?? (horizontal ? 10 : 14) });
+  const full = queryCategories(en, field, v.values, cs, { legend: v.legend, topN: v.topN ?? (horizontal ? 10 : 14) });
+  const r = v.hideOther ? { ...full, categories: full.categories.filter((c) => !c.isOther), series: full.series.map((s) => ({ ...s, data: s.data.filter((_, i) => !full.categories[i].isOther) })) } : full;
   if (!hasData(r)) return empty();
   const fmt = en.valueFormat(value);
   const labels = r.categories.map((c) => c.label);

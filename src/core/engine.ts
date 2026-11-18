@@ -52,7 +52,7 @@ export function bucketLabel(start: number, part: DatePart): string {
 
 /** True when the final period holds noticeably less of its calendar than earlier periods did. */
 export function lastPeriodIncomplete(dates: number[], part: DatePart): boolean {
-  if (dates.length < 2) return false;
+  if (dates.length < 2 || part === 'day') return false;
   const latest = new Map<number, number>();
   for (const d of dates) { const b = bucketStart(d, part); latest.set(b, Math.max(latest.get(b) ?? 0, d)); }
   const buckets = [...latest.keys()].sort((a, b) => a - b);
@@ -108,7 +108,8 @@ export class Engine {
   param(name: string) { return this.params.get(name) ?? null; }
   measure(name: string) { return this.parsed.get(name); }
   hasMeasure(name: string) { return this.parsed.has(name); }
-  get firstDateColumn() { return this.table.columns.find((c) => c.type === 'date')?.name; }
+  /** The date events happened on. Birth and expiry dates are never used as a timeline. */
+  get firstDateColumn() { return this.table.columns.find((c) => c.type === 'date' && !/(birth|dob|expir)/i.test(c.name))?.name; }
 
   /** Value of a field for every row, with date parts resolved to bucket starts. */
   keys(field: FieldRef): ArrayLike<Cell> {

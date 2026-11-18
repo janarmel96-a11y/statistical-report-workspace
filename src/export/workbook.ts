@@ -15,7 +15,7 @@ export interface WorkbookInput {
   title: string;
   generatedAt: Date;
   filters: string;
-  kpis: { label: string; value: number | null; format?: NumberFormat; currency?: string; note?: string }[];
+  kpis: { label: string; value: number | null; text?: string; format?: NumberFormat; currency?: string; note?: string }[];
   insights: Insight[];
   visuals: (VisualTable & { image?: { base64: string; width: number; height: number } })[];
   data: DataTable;
@@ -23,6 +23,7 @@ export interface WorkbookInput {
   profile: ColumnProfile[];
   findings: Finding[];
   measures: Measure[];
+  trail?: { source: string; action: string; detail: string; status: string }[];
 }
 
 export interface WorkbookOptions { target: 'excel' | 'sheets' }
@@ -209,7 +210,7 @@ export async function buildWorkbook(input: WorkbookInput, opts: WorkbookOptions)
   for (const k of input.kpis) {
     sum.getCell(row, 1).value = safeText(k.label);
     const c = sum.getCell(row, 2);
-    c.value = safeCell(k.value);
+    c.value = k.text ? safeText(k.text) : safeCell(k.value);
     c.numFmt = numFmt(k.format, k.currency);
     c.font = { bold: true };
     sum.getCell(row, 3).value = k.note ? safeText(k.note) : null;
@@ -323,6 +324,19 @@ export async function buildWorkbook(input: WorkbookInput, opts: WorkbookOptions)
       [c.row + 2, safeText(c.column), safeCell(c.before), safeCell(c.after), safeText(c.reason)].forEach((v, i) => { cr.getCell(at, i + 1).value = v; });
       at++;
     }
+  }
+
+  /* Audit trail ------------------------------------------------------------------------------ */
+  if (input.trail?.length) {
+    const at2 = wb.addWorksheet(safeSheetName('Audit Trail', used), { views: [{ state: 'frozen', ySplit: 3 }] });
+    title(at2, 'Audit trail', 'Every automatic check and manual change applied to this data.');
+    ['Step', 'Source', 'Change', 'Detail', 'Status'].forEach((h, i) => { at2.getCell(3, i + 1).value = h; });
+    headerRow(at2, 3, 5);
+    input.trail.forEach((e, i) => {
+      [i + 1, e.source, safeText(e.action), safeText(e.detail), e.status].forEach((v, c) => { at2.getCell(4 + i, c + 1).value = v; });
+      at2.getRow(4 + i).alignment = { wrapText: true, vertical: 'top' };
+    });
+    [7, 18, 56, 70, 13].forEach((w, i) => { at2.getColumn(i + 1).width = w; });
   }
 
   /* Measures --------------------------------------------------------------------------------- */

@@ -2,7 +2,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Responsive, WidthProvider, type Layout } from 'react-grid-layout';
 import {
-  AlertTriangle, ArrowLeft, Bookmark, Check, ChevronDown, Clapperboard, Download, Filter, Highlighter, PanelRight, Pencil, Plus, Printer, Redo2, RefreshCw, Search, SlidersHorizontal, Sparkles, Undo2, X,
+  AlertTriangle, ArrowLeft, Bookmark, Check, ChevronDown, Clapperboard, LockKeyhole, Download, Filter, Highlighter, PanelRight, Pencil, Plus, Printer, Redo2, RefreshCw, Search, SlidersHorizontal, Sparkles, Undo2, X,
 } from 'lucide-react';
 import { formatCell, formatNumber } from '../core/format';
 import { newId, recommendTemplates } from '../core/insights';
@@ -176,8 +176,8 @@ export function Report() {
         <div className="spacer" />
         <button className="icon-btn" aria-label="Undo" title="Undo" disabled={!s.undoStack.length} onClick={s.undoReport}><Undo2 size={17} /></button>
         <button className="icon-btn" aria-label="Redo" title="Redo" disabled={!s.redoStack.length} onClick={s.redoReport}><Redo2 size={17} /></button>
-        <button className="btn ghost" onClick={() => s.setRoute('prepare')}><SlidersHorizontal size={15} /> Data</button>
-        <button className="btn ghost" title="Replace the data and keep this report" onClick={() => replaceInput.current?.click()}><RefreshCw size={15} /> Refresh</button>
+        {s.accessRole !== 'viewer' && <button className="btn ghost" onClick={() => s.setRoute('prepare')}><SlidersHorizontal size={15} /> Data</button>}
+        {s.accessRole !== 'viewer' && <button className="btn ghost" title="Replace the data and keep this report" onClick={() => replaceInput.current?.click()}><RefreshCw size={15} /> Refresh</button>}
         <input ref={replaceInput} type="file" hidden accept={ACCEPT} aria-label="Choose a new data file" onChange={(e) => { const f = e.target.files?.[0]; if (f) void s.replaceData(f); e.target.value = ''; }} />
         <Popover label="Bookmarks" align="right" button={() => <button className="icon-btn" aria-label="Bookmarks" title="Bookmarks"><Bookmark size={17} /></button>}>
           {(close) => (
@@ -217,6 +217,7 @@ export function Report() {
         </div>
       )}
 
+      {s.accessRole === 'viewer' && <div className="banner info" role="status"><LockKeyhole size={16} /><span><b>Viewer access.</b> Personal and identifying columns are not included in this copy.</span></div>}
       {s.autoNotice && (
         <div className="banner info" role="status">
           <Sparkles size={16} />

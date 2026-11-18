@@ -1,7 +1,8 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { create } from 'zustand';
 import { qualityScore, runAudit, type QualityScore } from '../core/audit';
-import { chooseTables, summarizeAuto, type AutoSummary } from '../core/autoReport';
+import { chooseTables, summarizeAuto, tableLabels, type AutoSummary } from '../core/autoReport';
+import { combineSources, matchColumns, toRawTable } from '../core/combine';
 import { Engine } from '../core/engine';
 import { generateInsights, newId, newReport, recommendTemplates } from '../core/insights';
 import { inferTable, type InferredColumn } from '../core/parse';
@@ -9,6 +10,7 @@ import { appendTables, applyRecipe, diffSchema, joinTables, reusableSteps, type 
 import type { Bookmark, Page, ReportDoc, Selection, Slicer, Visual } from '../core/report';
 import { DEFAULT_LOCALE, type Constraint, type DataTable, type Finding, type LocaleOptions, type RawTable, type Step } from '../core/types';
 import { readFile } from '../ingest';
+import type { AccessRole } from '../export/protectedFile';
 import { deleteAllProjects, saveProject, type CombineConfig, type ProjectRecord } from './persist';
 
 export type Route = 'home' | 'prepare' | 'report';
@@ -24,6 +26,8 @@ interface State {
   patterns: boolean;
   autoMode: boolean;
   privateMode: boolean;
+  accessRole: AccessRole | null;
+  locked: { name: string; text: string } | null;
   busy: { message: string; fraction?: number } | null;
   toasts: Toast[];
   pending: RawTable[] | null;
@@ -62,6 +66,8 @@ interface State {
   setAutoMode(v: boolean): void;
   setPrivateMode(v: boolean): void;
   deleteSavedData(): Promise<void>;
+  unlock(passcode: string): Promise<boolean>;
+  cancelUnlock(): void;
   toast(kind: Toast['kind'], text: string): void;
   dismissToast(id: number): void;
   importFiles(files: File[]): Promise<void>;
@@ -100,6 +106,14 @@ function readPref<T extends string>(key: string, fallback: T): T {
 function writePref(key: string, v: string) { try { localStorage.setItem(key, v); } catch { /* private mode */ } }
 
 export function buildBase(raws: RawTable[], combine: CombineConfig, locale: LocaleOptions) {
+  if (combine.mode === 'append' && raws.length > 1) {
+    // Stacked files are lined up by header, so small header differences never split a column.
+    const labels = tableLabels(raws);
+    const sources = raws.map((r, i) => ({ name: labels[i], headers: r.headers.map((h) => String(h ?? '').trim()), rows: r.rows }));
+    const merged = combineSources(sources, matchColumns(sources), { addSource: true, sourceHeader: 'Source File', removeDuplicates: false });
+    const { table, inferred } = inferTable(toRawTable(merged, 'Combined files'), locale);
+    return { table, inferred };
+  }
   const parts = raws.map((r) => inferTable(r, locale));
   let table = parts[0].table;
   if (combine.mode === 'append') table = appendTables(parts.map((p) => p.table), raws.map((r) => r.name).join(' + '));
@@ -127,7 +141,7 @@ export const useStore = create<State>((set, get) => {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       const s = get();
-      if (!s.projectId || !s.table || s.privateMode) return;
+      if (!s.projectId || !s.table || s.privateMode || s.accessRole) return;
       void saveProject({
         id: s.projectId, name: s.report?.title ?? s.projectName, updatedAt: Date.now(), rowCount: s.table.rowCount, columnCount: s.table.columns.length,
         raws: s.raws, combine: s.combine, locale: s.locale, steps: s.steps, disabledFindings: s.disabled, report: s.report,
@@ -145,7 +159,7 @@ export const useStore = create<State>((set, get) => {
     set({
       projectId: opts.id ?? newId('r'), projectName: opts.name ?? table.name, raws, combine, locale, base: table, inferred, findings,
       quality: qualityScore(table, findings), disabled, steps, redoSteps: [], table: cleanTable, pending: null,
-      report: opts.report ?? null, engine: null, slicers: [], selection: null, selectedVisual: null, undoStack: [], redoStack: [], schemaNotice: null, autoNotice: null,
+      report: opts.report ?? null, engine: null, slicers: [], selection: null, selectedVisual: null, undoStack: [], redoStack: [], schemaNotice: null, autoNotice: null, accessRole: null,
     });
   };
 
@@ -177,6 +191,7 @@ export const useStore = create<State>((set, get) => {
     patterns: readPref<string>('srw-patterns', 'off') === 'on',
     autoMode: readPref<string>('srw-auto', 'off') === 'on',
     privateMode: readPref<string>('srw-private', 'off') === 'on',
+    accessRole: null, locked: null,
     busy: null, toasts: [], pending: null,
     projectId: null, projectName: '', raws: [], combine: { mode: 'single' }, locale: DEFAULT_LOCALE,
     base: null, inferred: [], findings: [], quality: null, disabled: [], steps: [], redoSteps: [], table: null,
@@ -190,6 +205,19 @@ export const useStore = create<State>((set, get) => {
     setAutoMode: (autoMode) => { writePref('srw-auto', autoMode ? 'on' : 'off'); set({ autoMode }); },
     setPrivateMode: (privateMode) => { clearTimeout(saveTimer); writePref('srw-private', privateMode ? 'on' : 'off'); set({ privateMode }); },
     deleteSavedData: async () => { clearTimeout(saveTimer); await deleteAllProjects(); },
+    unlock: async (passcode) => {
+      const file = get().locked;
+      if (!file) return false;
+      const { openProtectedFile } = await import('../export/protectedFile');
+      const p = await openProtectedFile(file.text, passcode).catch(() => null);
+      if (!p) return false;
+      set({ locked: null });
+      // A protected report is opened in memory only and is never saved to this browser.
+      get().openRecord({ id: newId('r'), name: p.report.title, updatedAt: Date.now(), rowCount: 0, columnCount: 0, raws: p.raws, combine: p.combine, locale: p.locale, steps: p.steps, disabledFindings: p.disabledFindings, report: p.report });
+      set({ accessRole: p.role });
+      return true;
+    },
+    cancelUnlock: () => set({ locked: null }),
     toast: (kind, text) => {
       const id = ++toastId;
       set((s) => ({ toasts: [...s.toasts, { id, kind, text }] }));
@@ -202,6 +230,7 @@ export const useStore = create<State>((set, get) => {
       for (const f of files) {
         try {
           set({ busy: { message: `Reading ${f.name}` } });
+          if (/\.statsecure$/i.test(f.name)) { set({ busy: null, locked: { name: f.name, text: await f.text() } }); return; }
           if (/\.statreport\.json$/i.test(f.name)) {
             const p = JSON.parse(await f.text()) as Partial<ProjectRecord> & { app?: string };
             if (p.app !== 'statistical-report-workspace' || !p.raws?.length || !p.report) throw new Error(`${f.name} is not a valid report project.`);

@@ -3,7 +3,7 @@ import { memo, useMemo, useState } from 'react';
 import { ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, Calculator, ChevronRight, CornerLeftUp, Download, Minus, MoreHorizontal, Table2, Trash2, Copy } from 'lucide-react';
 import { formatCell, formatNumber, formatPct } from '../core/format';
 import { generateInsights, newId, type Insight } from '../core/insights';
-import { activeField, keyLabel, OTHER, queryCategories, queryKpi, visualConstraints, visualTable, type Visual, type VisualTable } from '../core/report';
+import { activeField, keyLabel, OTHER, queryCategories, queryKpi, queryRange, visualConstraints, visualTable, type Visual, type VisualTable } from '../core/report';
 import type { Cell, Constraint, FieldRef } from '../core/types';
 import { filterSummary, pageConstraints, useStore } from '../state/store';
 import { buildChart, vizTheme } from './chartOptions';
@@ -15,6 +15,8 @@ export interface DrillTarget { field: FieldRef; key: Cell; label: string; constr
 function Kpi({ v, cs }: { v: Visual; cs: Constraint[] }) {
   const en = useStore((s) => s.engine)!;
   const k = useMemo(() => (v.values[0] ? queryKpi(en, v.values[0], cs) : null), [en, v, cs]);
+  const range = useMemo(() => (v.range && v.values[0]?.kind === 'col' ? queryRange(en, v.values[0].col, cs) : null), [en, v, cs]);
+  if (range) return <div className="kpi"><strong>{range.label}</strong><div className="kpi-foot"><span className="delta"><small>{range.note}</small></span></div></div>;
   if (!k) return <p className="empty-note">Add a metric to Values</p>;
   const up = (k.change ?? 0) >= 0;
   return (
@@ -172,7 +174,7 @@ export const VisualCard = memo(function VisualCard({ visual: v, onDrillThrough }
       <header className="card-head">
         <div className="card-drag">
           <h3 title={v.title}>{v.title}</h3>
-          {!!v.drillPath?.length && <nav className="crumbs" aria-label="Drill path">{v.drillPath.map((d, i) => <span key={i}><ChevronRight size={11} />{d.label}</span>)}</nav>}
+          {isChart && !!v.drillPath?.length && <nav className="crumbs" aria-label="Drill path">{v.drillPath.map((d, i) => <span key={i}><ChevronRight size={11} />{d.label}</span>)}</nav>}
         </div>
         <div className="card-tools">
           {isChart && v.axis.length > 1 && <>

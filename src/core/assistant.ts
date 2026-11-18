@@ -173,7 +173,7 @@ export function suggestImprovements(ctx: AssistantContext): Suggestion[] {
   const { en, report, findings, cs, memory } = ctx;
   const out: Suggestion[] = [];
   const t = en.table;
-  const { metric, date, dims } = pickPlan(en);
+  const { metric, date, dims, caseMode } = pickPlan(en);
   const visuals = report.pages.flatMap((p) => p.visuals);
   const add = (s: Suggestion) => { if (!memory.dismissed.includes(s.id)) out.push(s); };
 
@@ -198,7 +198,7 @@ export function suggestImprovements(ctx: AssistantContext): Suggestion[] {
     const trend = visuals.find((v) => v.type === 'line' && !v.legend && !v.forecast);
     const months = new Set(en.keys({ col: date, part: 'month' }) as ArrayLike<Cell> as Cell[]).size;
     if (trend && months >= 12) add({ id: 'forecast', priority: 55, title: 'Add a forecast to the trend', why: `There are ${months} months of history, which is enough to project the next periods.`, action: { type: 'forecast', label: 'Add forecast', visualId: trend.id } });
-    if (!report.measures.some((m) => /PREVIOUSYEAR/i.test(m.expr)) && metric.kind === 'col') {
+    if (!report.measures.some((m) => /PREVIOUSYEAR/i.test(m.expr)) && metric.kind === 'col' && metric.agg !== 'rows') {
       const col = metric.col;
       add({ id: 'yoy', priority: 50, title: 'Track year-over-year growth', why: 'A growth measure shows whether results are improving like for like.', action: { type: 'addMeasure', label: 'Add measure', measure: { name: `${col} YoY %`, expr: `DIVIDE(SUM([${col}]) - PREVIOUSYEAR(SUM([${col}])), PREVIOUSYEAR(SUM([${col}])))`, format: 'percent' } } });
     }
@@ -208,7 +208,7 @@ export function suggestImprovements(ctx: AssistantContext): Suggestion[] {
   if (revenue && cost && !report.measures.some((m) => /margin/i.test(m.name))) {
     add({ id: 'margin', priority: 65, title: 'Add a profit margin measure', why: `${revenue.name} and ${cost.name} are both available, so margin can be tracked.`, action: { type: 'addMeasure', label: 'Add measure', measure: { name: 'Profit margin', expr: `DIVIDE(SUM([${revenue.name}]) - SUM([${cost.name}]), SUM([${revenue.name}]))`, format: 'percent' } } });
   }
-  if (metric && !t.columns.some((c) => /(target|budget|plan|goal|quota)/i.test(c.name))) add({ id: 'target', priority: 45, title: 'Add a target or budget column', why: 'Results can then be compared with goals, not only with the past.' });
+  if (metric && !caseMode && !t.columns.some((c) => /(target|budget|plan|goal|quota)/i.test(c.name))) add({ id: 'target', priority: 45, title: 'Add a target or budget column', why: 'Results can then be compared with goals, not only with the past.' });
   const crowded = report.pages.find((p) => p.visuals.length > 10);
   if (crowded) add({ id: `crowded:${crowded.id}`, priority: 40, title: `Simplify the ${crowded.name} page`, why: `It has ${crowded.visuals.length} visuals. Moving some to another page makes the message clearer.` });
   if (dims[1] && metric && !visuals.some((v) => v.type === 'heatmap')) add({ id: 'heatmap', priority: 35, title: `Compare ${dims[0]} with ${dims[1]}`, why: 'A heatmap reveals strong and weak combinations.', action: { type: 'addChart', label: 'Add heatmap', visual: makeVisual('heatmap', `${en.valueLabel(metric)}: ${dims[0]} × ${dims[1]}`, [{ col: dims[0] }], [metric], { legend: { col: dims[1] } }) } });

@@ -2,7 +2,9 @@
 import { useMemo, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Info, Redo2, Undo2 } from 'lucide-react';
 import { formatCell, formatPct } from '../core/format';
+import { measureKind } from '../core/analytics';
 import { profileColumn } from '../core/insights';
+import { auditTrail, outlierLimits, ruleViolations } from '../core/recipe';
 import type { Cell, ColRole, ColType, Column, FillStrategy, Finding } from '../core/types';
 import { useStore } from '../state/store';
 import { Logo, Modal, ThemeSwitch } from './common';
@@ -31,7 +33,7 @@ function FindingCard({ f }: { f: Finding }) {
   );
 }
 
-type Tool = 'rename' | 'fill' | 'split' | 'merge' | null;
+type Tool = 'rename' | 'fill' | 'split' | 'merge' | 'outliers' | 'rule' | null;
 
 function ColumnTools({ col }: { col: Column }) {
   const addStep = useStore((s) => s.addStep);
@@ -41,6 +43,14 @@ function ColumnTools({ col }: { col: Column }) {
   const [strategy, setStrategy] = useState<FillStrategy>(col.type === 'number' ? 'median' : 'mode');
   const [others, setOthers] = useState<string[]>([]);
   const missing = useMemo(() => col.values.filter((v) => v === null).length, [col]);
+  const limits = useMemo(() => (col.type === 'number' ? outlierLimits(col) : null), [col]);
+  const [min, setMin] = useState('');
+  const [max, setMax] = useState('');
+  const [allowed, setAllowed] = useState('');
+  const [required, setRequired] = useState(false);
+  const [action, setAction] = useState<'exclude' | 'blank'>('exclude');
+  const rule = { required: required || undefined, min: min === '' ? undefined : Number(min), max: max === '' ? undefined : Number(max), allowed: allowed.trim() ? allowed.split(',').map((a) => a.trim()).filter(Boolean) : undefined };
+  const violations = tool === 'rule' ? ruleViolations(col, rule).length : 0;
   const open = (t: Tool, initial = '') => { setTool(t); setText(initial); setOthers([]); };
   const close = () => setTool(null);
   return (
@@ -53,8 +63,28 @@ function ColumnTools({ col }: { col: Column }) {
       <button className="btn sm" disabled={!missing} onClick={() => addStep({ op: 'dropMissing', col: col.name })}>Remove blank rows</button>
       <button className="btn sm" onClick={() => open('split', ',')}>Split</button>
       <button className="btn sm" onClick={() => open('merge', col.name)}>Merge</button>
+      {col.type === 'number' && <button className="btn sm" disabled={!limits?.count} onClick={() => open('outliers')}>Outliers{limits?.count ? ` (${limits.count.toLocaleString()})` : ''}</button>}
+      <button className="btn sm" onClick={() => open('rule')}>Add rule</button>
       <button className="btn sm danger" onClick={() => addStep({ op: 'drop', col: col.name })}>Remove column</button>
 
+      {tool === 'outliers' && limits && (
+        <Modal title={`Outliers in ${col.name}`} onClose={close} footer={<>
+          <button className="btn" onClick={() => { addStep({ op: 'outliers', col: col.name, method: 'cap' }); close(); }}>Cap at the limits</button>
+          <button className="btn primary" onClick={() => { addStep({ op: 'outliers', col: col.name, method: 'remove' }); close(); }}>Remove {limits.count.toLocaleString()} rows</button>
+        </>}>
+          <p>{limits.count.toLocaleString()} values fall outside the usual range of {formatCell(limits.low, col)} to {formatCell(limits.high, col)}.</p>
+          <p className="hint">Check these before changing them, because an unusual value can be correct. You can undo this at any time.</p>
+        </Modal>
+      )}
+      {tool === 'rule' && (
+        <Modal title={`Validation rule for ${col.name}`} onClose={close} footer={<button className="btn primary" disabled={!violations} onClick={() => { addStep({ op: 'rule', col: col.name, rule, action }); close(); }}>Apply to {violations.toLocaleString()} rows</button>}>
+          <label className="switch"><input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /><i /><span>A value is required</span></label>
+          {col.type === 'number' ? <div className="two"><label className="field">Lowest allowed <input type="number" value={min} onChange={(e) => setMin(e.target.value)} /></label><label className="field">Highest allowed <input type="number" value={max} onChange={(e) => setMax(e.target.value)} /></label></div>
+            : <label className="field">Allowed values, separated by commas <input value={allowed} onChange={(e) => setAllowed(e.target.value)} /></label>}
+          <label className="field">Rows that break the rule <select value={action} onChange={(e) => setAction(e.target.value as 'exclude' | 'blank')}><option value="exclude">Exclude the row</option><option value="blank">Blank this value</option></select></label>
+          <p className="hint" role="status">{violations.toLocaleString()} rows break this rule.</p>
+        </Modal>
+      )}
       {tool === 'rename' && (
         <Modal title="Rename column" onClose={close} footer={<button className="btn primary" onClick={() => { addStep({ op: 'rename', col: col.name, name: text }); close(); }}>Rename</button>}>
           <label className="field">New name <input autoFocus value={text} onChange={(e) => setText(e.target.value)} /></label>
@@ -151,6 +181,7 @@ function ColumnSummary({ col, rows }: { col: Column; rows: number }) {
   const f = (v?: number) => (v === undefined ? '–' : formatCell(v, col));
   return (
     <dl className="col-summary">
+      <div><dt>Kind</dt><dd>{measureKind(col)}</dd></div>
       <div><dt>Values</dt><dd>{p.count.toLocaleString()}</dd></div>
       <div><dt>Distinct</dt><dd>{p.distinct.toLocaleString()}</dd></div>
       {col.type === 'number' && <>
@@ -172,6 +203,7 @@ export function Prepare() {
   const q = s.quality;
   const errors = s.findings.filter((f) => f.severity === 'error').length;
   const corrected = s.findings.filter((f) => !s.disabled.includes(f.id)).reduce((n, f) => n + f.changes.length, 0);
+  const trail = auditTrail(s.findings, s.disabled, s.steps);
   const meters: [string, number][] = q ? [['Complete', q.completeness], ['Valid', q.validity], ['Unique', q.uniqueness], ['Consistent', q.consistency]] : [];
   return (
     <div className="prepare">
@@ -203,6 +235,10 @@ export function Prepare() {
           <h2>Checks and corrections</h2>
           {s.findings.length ? <ul className="findings">{s.findings.map((f) => <FindingCard key={f.id} f={f} />)}</ul>
             : <p className="clean"><CheckCircle2 size={16} /> Every check passed.</p>}
+          <details className="trail">
+            <summary>Audit trail ({trail.length})</summary>
+            {trail.length ? <ol>{trail.map((e, i) => <li key={i}><b>{e.action}</b><small>{e.source} · {e.status}</small></li>)}</ol> : <p className="hint">No changes have been made.</p>}
+          </details>
         </aside>
         <main className="staging">
           {col ? <><ColumnTools key={col.name} col={col} /><ColumnSummary col={col} rows={table.rowCount} /></> : <p className="staging-hint">Select a column heading to change its type, fill blanks, or merge and split it. Corrected cells are highlighted, and hovering shows the original value.</p>}

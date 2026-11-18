@@ -17,7 +17,9 @@ Turn Excel, CSV, JSON, and PDF files into corrected, interactive statistical rep
 | **Analysis** | Distributions, correlations, outliers, trend tests, seasonality, written findings, and a "how this was calculated" view for each finding. |
 | **Workspace** | Bento dashboard, cross-filtering and highlighting, slicers, drill-down, drill-through, hierarchies, a fields pane with Axis, Values, Legend, Tooltips, and Small Multiples, bookmarks, and multiple pages. |
 | **Measures** | A DAX-style formula bar with percent of total, running totals, moving averages, year over year, conditional ratios, and what-if parameters. |
-| **Statistics** | t-test, ANOVA, Mann-Whitney, Kruskal-Wallis, chi-square, confidence intervals, and forecasting. |
+| **Statistics** | Descriptive statistics, period growth, segmentation, anomaly detection, regression, A/B tests, t-test, ANOVA, Mann-Whitney, Kruskal-Wallis, chi-square, confidence intervals, and forecasting. |
+| **Data control** | Outlier cleaning, validation rules, count and amount classification, and a full audit trail. |
+| **Protected reports** | Encrypted report files with separate owner and viewer passcodes. The viewer copy has personal columns removed. |
 | **Downloads** | Excel, Google Sheets, PDF, animated PowerPoint with speaker notes, MP4 video, PNG, CSV, and a project file. Workbooks are re-opened and checked before they are offered for download. |
 
 ## Run it on your computer

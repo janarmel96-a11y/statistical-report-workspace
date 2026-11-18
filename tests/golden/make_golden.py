@@ -101,6 +101,33 @@ gold = {
         'p90': float(np.percentile(s, 90)),
     },
 }
+# Multiple regression, solved directly with NumPy
+X = np.column_stack([np.ones(n), df.Units, df.Price])
+y = df.Sales.to_numpy()
+inv = np.linalg.inv(X.T @ X)
+beta = inv @ X.T @ y
+residual = y - X @ beta
+dof = n - X.shape[1]
+s2 = residual @ residual / dof
+se = np.sqrt(np.diag(inv) * s2)
+tv = beta / se
+sst = ((y - y.mean()) ** 2).sum()
+r2 = 1 - (residual @ residual) / sst
+gold['regression'] = {
+    'coef': beta.tolist(), 'se': se.tolist(), 't': tv.tolist(), 'p': (2 * stats.t.sf(np.abs(tv), dof)).tolist(), 'n': n,
+    'r2': float(r2), 'adjR2': float(1 - (1 - r2) * (n - 1) / dof), 'f': float((sst - residual @ residual) / 2 / s2),
+}
+
+# Two-proportion z-test
+a = df[df.Region == 'North']
+b = df[df.Region == 'South']
+sa, na, sb, nb = int((a.Segment == 'Business').sum()), len(a), int((b.Segment == 'Business').sum()), len(b)
+pa, pb, pool = sa / na, sb / nb, (sa + sb) / (na + nb)
+z = (pb - pa) / np.sqrt(pool * (1 - pool) * (1 / na + 1 / nb))
+sed = np.sqrt(pa * (1 - pa) / na + pb * (1 - pb) / nb)
+crit = stats.norm.ppf(0.975)
+gold['ab'] = {'successA': sa, 'totalA': na, 'successB': sb, 'totalB': nb, 'z': float(z), 'p': float(2 * stats.norm.sf(abs(z))), 'low': float(pb - pa - crit * sed), 'high': float(pb - pa + crit * sed)}
+
 out = pathlib.Path(__file__).with_name('golden.json')
 out.write_text(json.dumps(gold), encoding='utf8')
 print('wrote', out, out.stat().st_size)

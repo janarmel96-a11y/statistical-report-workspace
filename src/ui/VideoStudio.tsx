@@ -9,6 +9,7 @@ import { filterSummary, pageConstraints, useStore } from '../state/store';
 import { canExportVideo, encodeVideo, renderAudio } from '../video/encode';
 import { newScene, sceneSeconds, sizeOf, STYLES, subtitles, timelineOf, toVideoScenes, type Animation, type Music, type Quality, type Transition, type VideoFormat, type VideoProject, type VideoScene } from '../video/project';
 import { drawFrame, type Assets } from '../video/render';
+import { bestVoice, sentenceOffsets, speechRate, splitSentences, spokenText } from '../video/speech';
 
 const FORMATS: [VideoFormat, string][] = [['landscape', 'Landscape'], ['portrait', 'Portrait'], ['square', 'Square']];
 
@@ -52,7 +53,9 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
   const abort = useRef<AbortController | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const audio = useRef<AudioContext | null>(null);
-  const spoken = useRef(-1);
+  const speechRun = useRef(0);
+  const speechCap = useRef(Infinity);
+  const utterance = useRef<SpeechSynthesisUtterance | null>(null);
 
   const voiceSeconds = new Map([...voices.current].map(([k, v]) => [k, v.duration]));
   const tl = timelineOf(project, voiceSeconds);
@@ -66,7 +69,7 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
     setProject((p) => ({ ...p, scenes }));
   };
   const patch = (changes: Partial<VideoScene>) => setScenes(project.scenes.map((x) => (x.id === scene.id ? { ...x, ...changes } : x)));
-  const goTo = (i: number) => { setSelected(project.scenes[i].id); setTime(tl.starts[i] + 0.9); };
+  const goTo = (i: number) => { stop(); setSelected(project.scenes[i].id); setTime(tl.starts[i] + 0.9); };
 
   useEffect(() => {
     let live = true;
@@ -77,7 +80,11 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
       el.onerror = () => res();
       el.src = img.dataUrl;
     }))).then(() => { if (live) setReady(true); });
-    const load = () => setDeviceVoices(speechSynthesis.getVoices().filter((v) => v.localService && /^en/i.test(v.lang)));
+    const load = () => {
+      const list = speechSynthesis.getVoices().filter((v) => v.localService && /^en/i.test(v.lang));
+      setDeviceVoices(list);
+      setVoiceName((cur) => cur || (list.length ? bestVoice(list) : ''));
+    };
     if ('speechSynthesis' in window) { load(); speechSynthesis.addEventListener('voiceschanged', load); }
     return () => { live = false; if ('speechSynthesis' in window) { speechSynthesis.removeEventListener('voiceschanged', load); speechSynthesis.cancel(); } void audio.current?.close(); };
   }, [ctx]);
@@ -87,21 +94,86 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
     if (c) drawFrame(c, project, tl, time, assets.current);
   });
 
-  const stop = () => { setPlaying(false); speechSynthesis?.cancel(); spoken.current = -1; void audio.current?.close(); audio.current = null; };
+  const voiced = () => Boolean(voiceName && voiceName !== 'off' && 'speechSynthesis' in window);
+  const stop = () => {
+    speechRun.current += 1;
+    speechCap.current = Infinity;
+    setPlaying(false);
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    void audio.current?.close();
+    audio.current = null;
+  };
+
+  /** The voice leads: a scene changes only after its last sentence has been fully spoken. */
+  const finishScene = (i: number, run: number) => {
+    if (run !== speechRun.current) return;
+    if (i >= project.scenes.length - 1) { stop(); setTime(tl.total); return; }
+    speechCap.current = tl.starts[i + 1];
+    setTime(tl.starts[i + 1]);
+    setSelected(project.scenes[i + 1].id);
+    window.setTimeout(() => speakScene(i + 1, 0, run), 500);
+  };
+
+  const speakScene = (i: number, first: number, run: number) => {
+    if (run !== speechRun.current) return;
+    const current = project.scenes[i];
+    const [start, seconds] = [tl.starts[i], tl.durations[i]];
+    const recorded = voices.current.get(current.id);
+    if (recorded && audio.current) {
+      speechCap.current = start + seconds - 0.02;
+      const src = audio.current.createBufferSource();
+      src.buffer = recorded;
+      src.connect(audio.current.destination);
+      src.onended = () => finishScene(i, run);
+      src.start();
+      return;
+    }
+    const parts = splitSentences(current.narration);
+    const at = sentenceOffsets(parts, seconds);
+    const voice = deviceVoices.find((v) => v.name === voiceName) ?? null;
+    const say = (k: number) => {
+      if (run !== speechRun.current) return;
+      if (k >= parts.length) { speechCap.current = start + seconds - 0.02; window.setTimeout(() => finishScene(i, run), 350); return; }
+      speechCap.current = start + at[k + 1] - 0.02;
+      setTime(start + at[k]);
+      const u = new SpeechSynthesisUtterance(spokenText(parts[k]));
+      u.voice = voice;
+      if (voice) u.lang = voice.lang;
+      u.rate = speechRate(project.pace);
+      u.onend = () => { if (run === speechRun.current) window.setTimeout(() => say(k + 1), 180); };
+      u.onerror = (e) => { if (e.error !== 'canceled' && e.error !== 'interrupted') say(k + 1); };
+      utterance.current = u; // Browsers can lose the end event if nothing holds on to the sentence.
+      speechSynthesis.speak(u);
+    };
+    say(first);
+  };
 
   const play = async () => {
     if (playing) { stop(); return; }
     const from = time >= tl.total - 0.05 ? 0 : time;
+    const speaking = voiced();
+    const run = ++speechRun.current;
+    speechCap.current = speaking ? from : Infinity;
+    if (speaking) speechSynthesis.cancel();
     setTime(from);
     setPlaying(true);
-    const mix = await renderAudio(project, tl, voices.current).catch(() => null);
+    const mix = await renderAudio(project, tl, speaking ? new Map() : voices.current).catch(() => null);
+    if (run !== speechRun.current) return;
+    audio.current = new AudioContext();
     if (mix) {
-      audio.current = new AudioContext();
       const src = audio.current.createBufferSource();
+      const level = audio.current.createGain();
+      level.gain.value = speaking ? 0.45 : 1;
       src.buffer = mix;
-      src.connect(audio.current.destination);
-      src.start(0, from);
+      src.loop = speaking;
+      src.connect(level).connect(audio.current.destination);
+      src.start(0, from % mix.duration);
     }
+    if (!speaking) return;
+    const i = Math.max(0, tl.starts.findIndex((st, k) => from >= st && from < st + tl.durations[k]));
+    const at = sentenceOffsets(splitSentences(project.scenes[i].narration), tl.durations[i]);
+    const inside = from - tl.starts[i];
+    speakScene(i, Math.max(0, at.findIndex((t, k) => k < at.length - 1 && inside >= t && inside < at[k + 1])), run);
   };
 
   useEffect(() => {
@@ -112,7 +184,7 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
       const dt = (now - last) / 1000;
       last = now;
       setTime((t) => {
-        const next = t + dt;
+        const next = Math.min(t + dt, speechCap.current);
         if (next >= tl.total) { stop(); return tl.total; }
         return next;
       });
@@ -121,21 +193,6 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [playing, tl.total]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Reads the script aloud during preview, using only voices installed on this device.
-  useEffect(() => {
-    if (!playing || !voiceName) return;
-    const i = tl.starts.findIndex((st, k) => time >= st && time < st + tl.durations[k]);
-    if (i < 0 || i === spoken.current) return;
-    spoken.current = i;
-    speechSynthesis.cancel();
-    const current = project.scenes[i];
-    if (voices.current.has(current.id)) return;
-    const u = new SpeechSynthesisUtterance(current.narration);
-    u.voice = deviceVoices.find((v) => v.name === voiceName) ?? null;
-    u.rate = Math.min(1.5, project.pace / 2.4);
-    speechSynthesis.speak(u);
-  }, [time, playing, voiceName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const i = tl.starts.findIndex((st, k) => time >= st && time < st + tl.durations[k]);
@@ -247,7 +304,7 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
           </div>
           <div className="timeline" role="slider" aria-label="Video position" aria-valuemin={0} aria-valuemax={Math.round(tl.total)} aria-valuenow={Math.round(time)} tabIndex={0}
             onKeyDown={(e) => { if (e.key === 'ArrowRight') setTime((t) => Math.min(tl.total, t + 1)); if (e.key === 'ArrowLeft') setTime((t) => Math.max(0, t - 1)); }}
-            onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); const t = ((e.clientX - r.left) / r.width) * tl.total; setTime(t); const i = tl.starts.findIndex((st, k) => t >= st && t < st + tl.durations[k]); if (i >= 0) setSelected(project.scenes[i].id); }}>
+            onClick={(e) => { stop(); const r = e.currentTarget.getBoundingClientRect(); const t = ((e.clientX - r.left) / r.width) * tl.total; setTime(t); const i = tl.starts.findIndex((st, k) => t >= st && t < st + tl.durations[k]); if (i >= 0) setSelected(project.scenes[i].id); }}>
             {project.scenes.map((x, i) => <div key={x.id} className={`clip ${x.id === selected ? 'on' : ''}`} style={{ width: `${(tl.durations[i] / tl.total) * 100}%` }}><span>{i + 1}</span>{voices.current.has(x.id) && <Mic size={11} />}</div>)}
             <i className="playhead" style={{ left: `${(time / Math.max(0.01, tl.total)) * 100}%` }} />
           </div>
@@ -282,7 +339,7 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
             <label className="field compact">Quality <select value={project.quality} onChange={(e) => setProject((p) => ({ ...p, quality: Number(e.target.value) as Quality }))}><option value={720}>720p</option><option value={1080}>1080p</option></select></label>
           </div>
           <label className="field compact"><span><Volume2 size={13} /> Read aloud in preview</span>
-            <select value={voiceName} onChange={(e) => setVoiceName(e.target.value)}><option value="">Off</option>{deviceVoices.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}</select>
+            <select aria-label="Read aloud voice" value={voiceName || 'off'} onChange={(e) => { stop(); setVoiceName(e.target.value); }}><option value="off">Off</option>{deviceVoices.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}</select>
           </label>
           <label className="param"><span>Speaking pace <b>{project.pace.toFixed(1)}</b></span><input type="range" min={1.6} max={3.4} step={0.1} value={project.pace} onChange={(e) => setProject((p) => ({ ...p, pace: Number(e.target.value) }))} /></label>
           <label className="switch solo"><input type="checkbox" checked={project.captions} onChange={(e) => setProject((p) => ({ ...p, captions: e.target.checked }))} /><i /><span>Captions</span></label>

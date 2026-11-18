@@ -1,5 +1,5 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
-import type { InferredColumn } from './parse';
+import { AGE_NAME, type InferredColumn } from './parse';
 import { getColumn } from './recipe';
 import type { Cell, CellChange, Column, DataTable, Finding, Step } from './types';
 import { sum } from './stats';
@@ -230,6 +230,44 @@ export function runAudit(t: DataTable, inferred: InferredColumn[] = []): Finding
     });
   }
 
+  /* Ages that cannot be right are recalculated from the birth date ------------------------------ */
+  const ageCol = t.columns.find((c) => c.type === 'number' && AGE_NAME.test(c.name.trim()));
+  if (ageCol) {
+    const birth = t.columns.find((c) => c.type === 'date' && /(birth|dob)/i.test(c.name));
+    const reference = t.columns.find((c) => c.type === 'date' && !/(birth|dob|expir)/i.test(c.name));
+    const unreadable = new Map(inferred.find((x) => x.column.name === ageCol.name)?.invalid.map((x) => [x.row, x.text]) ?? []);
+    const changes: CellChange[] = [];
+    for (const i of active) {
+      const v = ageCol.values[i];
+      if (typeof v === 'number' ? v >= 0 && v <= 120 : !unreadable.has(i)) continue;
+      const born = birth?.values[i];
+      const on = typeof reference?.values[i] === 'number' ? (reference.values[i] as number) : Date.now();
+      let after: number | null = null;
+      if (typeof born === 'number') {
+        const [b, d] = [new Date(born), new Date(on)];
+        const years = d.getUTCFullYear() - b.getUTCFullYear() - (d.getUTCMonth() < b.getUTCMonth() || (d.getUTCMonth() === b.getUTCMonth() && d.getUTCDate() < b.getUTCDate()) ? 1 : 0);
+        if (years >= 0 && years <= 120) after = years;
+      }
+      changes.push({ row: t.rowIds[i], column: ageCol.name, before: unreadable.get(i) ?? v, after, reason: after === null ? 'Impossible age with no usable birth date, so it is left out' : `Impossible age recalculated from ${birth!.name}` });
+    }
+    if (changes.length) {
+      const blocked = findings.findIndex((f) => f.kind === 'invalid-value' && f.column === ageCol.name);
+      if (blocked >= 0) findings.splice(blocked, 1);
+      const fixed = changes.filter((c) => c.after !== null).length;
+      add({
+        kind: 'impossible-age', severity: 'error', column: ageCol.name, count: changes.length, auto: true, changes,
+        steps: [{ op: 'setCells', col: ageCol.name, changes: changes.map((c) => ({ row: c.row, value: c.after })), reason: 'Impossible age' }],
+        title: `${changes.length.toLocaleString()} impossible ${changes.length === 1 ? 'age' : 'ages'} corrected`,
+        detail: `Ages must be from 0 to 120. ${fixed} ${fixed === 1 ? 'was' : 'were'} recalculated from ${birth?.name ?? 'the birth date'}${changes.length - fixed ? `, and ${changes.length - fixed} could not be calculated, so ${changes.length - fixed === 1 ? 'it is' : 'they are'} left out` : ''}.`,
+      });
+    }
+    if (!getColumn(t, 'Age Group')) add({
+      kind: 'age-group', severity: 'info', column: 'Age Group', count: t.rowCount, auto: true, changes: [],
+      steps: [{ op: 'ageBands', col: ageCol.name, name: 'Age Group' }],
+      title: 'Age Group column added', detail: 'Ages are grouped as 0-17, 18-29, 30-44, 45-59, and 60 and over for reporting.',
+    });
+  }
+
   for (const f of findings) {
     if (f.kind === 'sheet-error' && rules.some((r) => r.target === f.column)) {
       f.auto = true;
@@ -294,7 +332,7 @@ export function runAudit(t: DataTable, inferred: InferredColumn[] = []): Finding
     const counts = new Map<Cell, number>();
     for (const i of active) if (c.values[i] !== null && !removed.has(t.rowIds[i])) counts.set(c.values[i], (counts.get(c.values[i]) ?? 0) + 1);
     const repeated = [...counts.values()].filter((n) => n > 1).length;
-    if (repeated > 0 && repeated / Math.max(1, counts.size) < 0.2) {
+    if (repeated > 0 && repeated / Math.max(1, counts.size) < 0.05 && !/(contact|phone|mobile|cell|tel)/i.test(c.name)) {
       add({
         kind: 'duplicate-id', severity: 'warning', column: c.name, count: repeated, auto: false, steps: [], changes: [],
         title: `${repeated} repeated value${repeated > 1 ? 's' : ''} in ${c.name}`,
@@ -372,7 +410,7 @@ export function qualityScore(t: DataTable, findings: Finding[]): QualityScore {
   for (const c of t.columns) for (const v of c.values) if (v === null) missingCells++;
   const countOf = (...kinds: string[]) => findings.filter((f) => kinds.includes(f.kind)).reduce((s, f) => s + f.count, 0);
   const completeness = 1 - missingCells / cells;
-  const validity = Math.max(0, 1 - countOf('sheet-error', 'invalid-value', 'wrong-calculation', 'wrong-total', 'negative', 'future-date') / cells * 10);
+  const validity = Math.max(0, 1 - countOf('sheet-error', 'invalid-value', 'wrong-calculation', 'impossible-age', 'wrong-total', 'negative', 'future-date') / cells * 10);
   const uniqueness = Math.max(0, 1 - countOf('duplicate-rows', 'total-row') / Math.max(1, t.rowCount));
   const consistency = Math.max(0, 1 - countOf('label-variants') / Math.max(1, t.rowCount));
   const base = (completeness * 0.3 + validity * 0.35 + uniqueness * 0.2 + consistency * 0.15) * 100;

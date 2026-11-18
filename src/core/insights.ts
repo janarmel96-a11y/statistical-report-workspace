@@ -1,13 +1,14 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { bucketAdd, bucketLabel, Engine, groupConstraint, lastPeriodIncomplete } from './engine';
 import { formatNumber, formatPct } from './format';
-import { fieldLabel, type Page, type ReportDoc, type Visual, type GridPos } from './report';
+import { AGE_NAME } from './parse';
+import { fieldLabel, keyLabel, queryCategories, queryRange, type Page, type ReportDoc, type Visual, type GridPos } from './report';
 import {
   benjaminiHochberg, histogram, iqrOutliers, kurtosis, mannKendall, mean, meanCI, median, modifiedZOutliers, pearson,
   quantile, skewness, spearman, stdev,
 } from './stats';
 import { detectRules } from './audit';
-import type { Column, Constraint, DatePart, DataTable, FieldRef, ValueRef } from './types';
+import type { Cell, Column, Constraint, DatePart, DataTable, FieldRef, ValueRef } from './types';
 
 /* ---------- column profiling ---------- */
 
@@ -112,20 +113,65 @@ export interface Insight {
   priority: number;
 }
 
-export interface InsightPlan { metric?: ValueRef; date?: string; dims: string[]; }
+export interface DimGroups { sex?: string; ageGroup?: string; age?: string; people: string[]; location: string[]; other: string[] }
+export interface InsightPlan {
+  metric?: ValueRef; date?: string; dims: string[];
+  /** True for lists of people or cases, where the right statistic is how many records fall in each group. */
+  caseMode: boolean;
+  groups: DimGroups;
+  highlights: string[];
+}
+
+const VALUE_NAME = /(sales|revenue|amount|income|profit|cost|expense|price|budget|balance|\bfee|salary|wage|quantity|\bqty\b|\bunits?\b|hours?|minutes?|volume|weight|spend|\bvalue|\btotal)/i;
+const NOT_A_GROUP = /(source file|\bname\b|worker|\bstaff\b|encoder|remark|\bnotes?\b|comment|\bothers?\b|specify)/i;
+const LOCATION_ORDER = [/\bcountry\b/i, /\bregion\b/i, /\bstate\b/i, /\bprovince\b/i, /(municipal|\bcity\b|\btown\b)/i, /(barangay|\bbrgy\b|district|village|suburb)/i];
+const PEOPLE_NAME = /(patient status|civil status|marital|sector|education|occupation|employment status|religion|ethnic|nationality|classification|type of patient|patient type)/i;
+
+function groupColumns(t: DataTable): DimGroups {
+  const groups: DimGroups = { people: [], location: [], other: [] };
+  groups.age = t.columns.find((c) => c.type === 'number' && AGE_NAME.test(c.name.trim()))?.name;
+  for (const c of t.columns) {
+    if ((c.type !== 'category' && c.type !== 'boolean') || c.role !== 'dimension' || NOT_A_GROUP.test(c.name)) continue;
+    const filled = c.values.filter((v) => v !== null);
+    const distinct = new Set(filled).size;
+    if (filled.length < t.rowCount * 0.5 || distinct < 2) continue;
+    const place = LOCATION_ORDER.findIndex((r) => r.test(c.name));
+    if (/^(sex|gender)$/i.test(c.name.trim())) groups.sex ??= c.name;
+    else if (c.order) groups.ageGroup = c.name;
+    else if (place >= 0) groups.location.push(c.name);
+    else if (distinct > 60) continue;
+    else if (PEOPLE_NAME.test(c.name)) groups.people.push(c.name);
+    else groups.other.push(c.name);
+  }
+  const rank = (n: string) => LOCATION_ORDER.findIndex((r) => r.test(n));
+  groups.location.sort((a, b) => rank(a) - rank(b));
+  return groups;
+}
 
 export function pickPlan(en: Engine): InsightPlan {
   const t = en.table;
   const score = (c: Column) => (/(revenue|sales|amount|total|net|income|profit|value|spend)/i.test(c.name) ? 2 : 0) + (c.values.some((v) => v !== null) ? 1 : 0);
   const measures = t.columns.filter((c) => c.type === 'number' && c.role === 'measure').sort((a, b) => score(b) - score(a));
   const ratios = t.columns.filter((c) => c.type === 'number' && c.role === 'ratio');
-  const metric: ValueRef | undefined = measures[0] ? { kind: 'col', col: measures[0].name, agg: 'sum' }
-    : ratios[0] ? { kind: 'col', col: ratios[0].name, agg: 'avg' } : undefined;
-  const dims = t.columns.filter((c) => (c.type === 'category' || c.type === 'boolean') && c.role === 'dimension')
+  const varied = (c: Column) => new Set(c.values.filter((v) => v !== null)).size > 1;
+  const realMeasures = measures.filter(varied).filter((c) => c.values.filter((v) => v !== null).length >= t.rowCount * 0.5);
+  const groups = groupColumns(t);
+  const groupCount = [groups.sex, groups.ageGroup, ...groups.people, ...groups.location, ...groups.other].filter(Boolean).length;
+  const caseMode = t.rowCount > 0 && (groupCount > 0 || realMeasures.length === 0) && (!realMeasures.length || (groupCount >= 6 && !realMeasures.some((c) => VALUE_NAME.test(c.name))));
+  const date = en.firstDateColumn;
+  if (caseMode) {
+    const dims = [groups.sex, groups.ageGroup, ...groups.people, ...groups.location, ...groups.other].filter((x): x is string => Boolean(x));
+    const town = groups.location.find((n) => /(municipal|\bcity\b|\btown\b)/i.test(n)) ?? groups.location[0];
+    const highlights = [groups.sex, groups.ageGroup, town, groups.people[0]].filter((x): x is string => Boolean(x));
+    return { metric: { kind: 'col', col: t.columns[0]?.name ?? '', agg: 'rows' }, date, dims, caseMode, groups, highlights };
+  }
+  const metric: ValueRef | undefined = realMeasures[0] ? { kind: 'col', col: realMeasures[0].name, agg: 'sum' }
+    : ratios.filter(varied)[0] ? { kind: 'col', col: ratios.filter(varied)[0].name, agg: 'avg' } : undefined;
+  const dims = t.columns.filter((c) => (c.type === 'category' || c.type === 'boolean') && c.role === 'dimension' && !NOT_A_GROUP.test(c.name))
     .map((c) => ({ c, d: new Set(c.values.filter((v) => v !== null)).size }))
     .filter((x) => x.d >= 2 && x.d <= 200)
     .sort((a, b) => (a.d > 30 ? 1 : 0) - (b.d > 30 ? 1 : 0) || a.d - b.d).map((x) => x.c.name);
-  return { metric, date: t.columns.find((c) => c.type === 'date')?.name, dims };
+  return { metric, date, dims, caseMode, groups, highlights: dims };
 }
 
 export function periodFor(en: Engine, date: string, cs: Constraint[]): DatePart {
@@ -138,12 +184,16 @@ export function periodFor(en: Engine, date: string, cs: Constraint[]): DatePart 
 /** Every insight is computed from the filtered data and only appears when its checks pass. */
 export function generateInsights(en: Engine, cs: Constraint[], filterText = 'None'): Insight[] {
   const out: Insight[] = [];
-  const { metric, date, dims } = pickPlan(en);
+  const plan = pickPlan(en);
+  const { metric, date } = plan;
+  const dims = plan.highlights;
   const rows = en.rows(cs);
   if (!metric || rows.length < 3) return out;
   const fmt = en.valueFormat(metric);
   const f = (v: number | null) => formatNumber(v, { ...fmt, compact: true });
-  const mName = metric.kind === 'col' ? metric.col : metric.name;
+  const counting = metric.kind === 'col' && metric.agg === 'rows';
+  const mName = counting ? 'records' : metric.kind === 'col' ? metric.col : metric.name;
+  const MName = mName[0].toUpperCase() + mName.slice(1);
   const additive = en.isAdditive(metric);
   const total = en.evaluate(metric, cs);
   const n = rows.length;
@@ -172,15 +222,15 @@ export function generateInsights(en: Engine, cs: Constraint[], filterText = 'Non
     if (usable.length >= 2) {
       curr = usable[usable.length - 1];
       prevKey = usable[usable.length - 2];
-      if (prevKey === bucketAdd(curr, part, -1)) {
+      if (prevKey === bucketAdd(curr, part, -1) && part !== 'day') {
         const [a, b] = [en.evaluate(metric, [...cs, groupConstraint(field, curr)]), en.evaluate(metric, [...cs, groupConstraint(field, prevKey)])];
         const na = en.rows([...cs, groupConstraint(field, curr)]).length;
         const nb = en.rows([...cs, groupConstraint(field, prevKey)]).length;
         if (a !== null && b !== null && b !== 0 && Math.min(na, nb) >= 5) {
           const ch = (a - b) / Math.abs(b);
           add({
-            kind: 'change', priority: 90, headline: `${mName} ${ch >= 0 ? 'rose' : 'fell'} ${formatPct(Math.abs(ch))}`,
-            text: `${mName} was ${f(a)} in ${bucketLabel(curr, part)}, ${ch >= 0 ? 'up' : 'down'} ${formatPct(Math.abs(ch))} from ${f(b)} in ${bucketLabel(prevKey, part)}.`,
+            kind: 'change', priority: 90, headline: `${MName} ${ch >= 0 ? 'rose' : 'fell'} ${formatPct(Math.abs(ch))}`,
+            text: `${MName} ${counting ? 'were' : 'was'} ${f(a)} in ${bucketLabel(curr, part)}, ${ch >= 0 ? 'up' : 'down'} ${formatPct(Math.abs(ch))} from ${f(b)} in ${bucketLabel(prevKey, part)}.`,
             audit: { formula: `(${f(a)} − ${f(b)}) ÷ |${f(b)}|`, n: na + nb, periods: `${bucketLabel(prevKey, part)} → ${bucketLabel(curr, part)}` },
           });
         }
@@ -192,7 +242,7 @@ export function generateInsights(en: Engine, cs: Constraint[], filterText = 'Non
       const mk = mannKendall(ys);
       if (mk.trend !== 'none') {
         add({
-          kind: 'trend', priority: 70, headline: `${mName} shows a steady ${mk.trend === 'up' ? 'upward' : 'downward'} trend`,
+          kind: 'trend', priority: 70, headline: `${MName} show${counting ? '' : 's'} a steady ${mk.trend === 'up' ? 'upward' : 'downward'} trend`,
           text: `Across ${usable.length} ${part}s the movement is ${mk.trend === 'up' ? 'upward' : 'downward'} and statistically significant (p ${mk.p < 0.001 ? '< 0.001' : `= ${mk.p.toFixed(3)}`}).`,
           audit: { formula: 'Mann-Kendall trend test', n: usable.length, periods: `${bucketLabel(usable[0], part)} → ${bucketLabel(usable[usable.length - 1], part)}`, test: `τ = ${mk.tau.toFixed(3)}, z = ${mk.z.toFixed(2)}` },
         });
@@ -220,8 +270,9 @@ export function generateInsights(en: Engine, cs: Constraint[], filterText = 'Non
 
   /* Share of total with its change between the same two periods */
   if (additive && total && total > 0) {
-    for (const dim of dims.slice(0, 2)) {
+    for (const dim of dims.slice(0, plan.caseMode ? 4 : 2)) {
       const field: FieldRef = { col: dim };
+      const label = (k: Cell) => keyLabel(en, field, k);
       const groups = [...en.groupRows(cs, field).keys()].filter((k) => k !== null);
       if (groups.length < 2) continue;
       const vals = groups.map((k) => ({ k, v: en.evaluate(metric, [...cs, groupConstraint(field, k)]) ?? 0 })).sort((a, b) => b.v - a.v);
@@ -230,7 +281,7 @@ export function generateInsights(en: Engine, cs: Constraint[], filterText = 'Non
       const share = top.v / total;
       let tail = '.';
       let periods: string | undefined;
-      if (date && curr !== null && prevKey !== null) {
+      if (date && curr !== null && prevKey !== null && part !== 'day') {
         const pf: FieldRef = { col: date, part };
         const [a, b] = [en.evaluate(metric, [...cs, groupConstraint(field, top.k), groupConstraint(pf, curr)]), en.evaluate(metric, [...cs, groupConstraint(field, top.k), groupConstraint(pf, prevKey)])];
         if (a !== null && b && en.rows([...cs, groupConstraint(field, top.k), groupConstraint(pf, curr)]).length >= 5) {
@@ -240,8 +291,8 @@ export function generateInsights(en: Engine, cs: Constraint[], filterText = 'Non
         }
       }
       add({
-        kind: 'share', priority: 85 - out.length, headline: `${top.k} leads ${dim}`,
-        text: `${top.k} accounts for ${formatPct(share)} of total ${mName}${tail}`,
+        kind: 'share', priority: 85 - out.length, headline: `${label(top.k)} leads ${dim}`,
+        text: `${label(top.k)} accounts for ${formatPct(share)} of ${counting ? 'all records' : `total ${mName}`}${tail}`,
         audit: { formula: `${f(top.v)} ÷ ${f(total)}`, n: en.rows([...cs, groupConstraint(field, top.k)]).length, periods },
       });
       if (groups.length >= 5) {
@@ -250,7 +301,7 @@ export function generateInsights(en: Engine, cs: Constraint[], filterText = 'Non
         if (cum >= 0.5) {
           add({
             kind: 'pareto', priority: 55, headline: `Top ${k} of ${groups.length} ${dim} values drive ${formatPct(cum, 0)}`,
-            text: `${vals.slice(0, Math.min(k, 3)).map((x) => x.k).join(', ')} contribute${k === 1 ? 's' : ''} ${formatPct(cum)} of ${mName}.`,
+            text: `${vals.slice(0, Math.min(k, 3)).map((x) => label(x.k)).join(', ')} contribute${k === 1 ? 's' : ''} ${formatPct(cum)} of ${mName}.`,
             audit: { formula: `Sum of top ${k} ÷ total`, n },
           });
         }
@@ -275,7 +326,18 @@ export function generateInsights(en: Engine, cs: Constraint[], filterText = 'Non
   }
 
   /* Outliers */
-  if (metric.kind === 'col') {
+  if (plan.groups.age && plan.caseMode) {
+    const range = queryRange(en, plan.groups.age, cs);
+    if (range && range.n >= 10) {
+      add({
+        kind: 'share', priority: 72, headline: `Ages range from ${range.label} years`,
+        text: `Valid ages run from ${range.label} years across ${range.n.toLocaleString('en-US')} records.${range.common ? ` The most common age group is ${range.common.label}, at ${(range.common.share * 100).toFixed(1)}% of records.` : ''}`,
+        audit: { formula: 'Lowest and highest valid age, from 0 to 120', n: range.n },
+      });
+    }
+  }
+
+  if (metric.kind === 'col' && !counting) {
     const xs = en.numbers(metric.col, rows);
     if (xs.length >= 20) {
       const o = iqrOutliers(xs);
@@ -356,8 +418,81 @@ function pack(visuals: { v: Visual; w: number; h: number }[]): { visuals: Visual
 
 const dateAxis = (date: string): FieldRef[] => (['year', 'quarter', 'month', 'day'] as DatePart[]).map((part) => ({ col: date, part }));
 
+const shortName = (s: string) => { const c = s.replace(/^[^\p{L}\p{N}]+/u, '').replace(/^\d+\.\s*/, '').replace(/\s+/g, ' ').trim(); return c.length > 46 ? `${c.slice(0, 45).trimEnd()}…` : c; };
+
+/** Reports for lists of people or cases: how many records fall in each group. */
+function recordTemplates(en: Engine, plan: InsightPlan): Template[] {
+  const count = plan.metric!;
+  const { date, groups } = plan;
+  type Item = { v: Visual; w: number; h: number };
+  const chart = (dim: string, w = 6): Item => {
+    const col = en.column(dim)!;
+    const distinct = new Set(col.values.filter((v) => v !== null)).size;
+    const place = groups.location.includes(dim);
+    const type: Visual['type'] = col.order ? 'column' : distinct <= 5 && !place ? 'donut' : 'bar';
+    const ranked = type === 'bar' && distinct > 10;
+    return { v: mk(type, `${ranked ? 'Top 10 by' : 'Records by'} ${shortName(dim)}`, [{ col: dim }], [count], type === 'bar' ? { topN: 11, hideOther: true } : {}), w, h: 8 };
+  };
+  const part = date ? periodFor(en, date, []) : 'month';
+  const level = Math.max(0, ['year', 'quarter', 'month', 'day'].indexOf(part === 'week' ? 'day' : part));
+  const kpis = (): Item[] => {
+    const list: Visual[] = [mk('kpi', 'Total records', [], [count])];
+    if (groups.sex) {
+      const sex = groups.sex;
+      queryCategories(en, { col: sex }, [count], [], { topN: 8 }).categories.filter((c) => c.key !== null && !c.isOther).slice(0, 2)
+        .forEach((c) => list.push(mk('kpi', c.label, [], [count], { drillPath: [{ field: { col: sex }, value: c.key, label: c.label }] })));
+    }
+    if (groups.age) list.push(mk('kpi', 'Age range (years)', [], [{ kind: 'col', col: groups.age, agg: 'avg' }], { range: true }));
+    return list.slice(0, 4).map((v, _, all) => ({ v, w: Math.floor(12 / all.length), h: 4 }));
+  };
+  const town = plan.highlights.find((d) => groups.location.includes(d));
+  const out: Template[] = [{
+    id: 'overview', name: 'Executive overview', description: 'Total records, sex, age, location, and written findings.', reason: 'This file lists individual records',
+    build: () => {
+      const items: Item[] = kpis();
+      if (date) items.push({ v: mk('line', 'Records over time', dateAxis(date), [count], { drillLevel: level }), w: 8, h: 8 });
+      items.push({ v: mk('insights', 'Key findings', [], []), w: 4, h: 16 });
+      [groups.sex, groups.ageGroup, town, groups.people[0]].filter((d): d is string => Boolean(d)).forEach((d) => items.push(chart(d, 4)));
+      return { id: newId('p'), name: 'Overview', ...pack(items) };
+    },
+  }];
+  if (groups.sex || groups.ageGroup || groups.people.length) {
+    out.push({
+      id: 'demographics', name: 'Demographics', description: 'Sex, age groups, and other characteristics.', reason: 'Sex, age, or personal characteristics were found',
+      build: () => {
+        const items: Item[] = [];
+        if (groups.sex) items.push(chart(groups.sex));
+        if (groups.ageGroup) items.push(chart(groups.ageGroup));
+        if (groups.sex && groups.ageGroup) items.push({ v: mk('stacked', 'Age group by sex', [{ col: groups.ageGroup }], [count], { legend: { col: groups.sex } }), w: 6, h: 8 });
+        if (groups.age) items.push({ v: mk('histogram', 'Age distribution', [], [{ kind: 'col', col: groups.age, agg: 'avg' }]), w: 6, h: 8 });
+        groups.people.slice(0, 6).forEach((d) => items.push(chart(d)));
+        return { id: newId('p'), name: 'Demographics', ...pack(items) };
+      },
+    });
+  }
+  if (groups.location.length) {
+    out.push({
+      id: 'location', name: 'Location', description: 'Where records come from, at every address level.', reason: 'Address fields were found',
+      build: () => {
+        const items: Item[] = groups.location.slice(0, 4).map((d) => ({ ...chart(d), h: 9 }));
+        if (town && groups.sex) items.push({ v: mk('stacked', `Sex by ${shortName(town)}`, [{ col: town }], [count], { legend: { col: groups.sex }, topN: 8 }), w: 12, h: 9 });
+        return { id: newId('p'), name: 'Location', ...pack(items) };
+      },
+    });
+  }
+  if (groups.other.length) {
+    out.push({
+      id: 'services', name: 'Categories', description: 'Counts for the other categories in this file.', reason: `${groups.other.length} more categories were found`,
+      build: () => ({ id: newId('p'), name: 'Categories', ...pack(groups.other.slice(0, 10).map((d) => chart(d))) }),
+    });
+  }
+  return out;
+}
+
 export function recommendTemplates(en: Engine): Template[] {
-  const { metric, date, dims } = pickPlan(en);
+  const plan = pickPlan(en);
+  if (plan.caseMode) return recordTemplates(en, plan);
+  const { metric, date, dims } = plan;
   const t = en.table;
   const measures = t.columns.filter((c) => c.type === 'number' && (c.role === 'measure' || c.role === 'ratio'));
   const out: Template[] = [];
@@ -452,10 +587,11 @@ export function recommendTemplates(en: Engine): Template[] {
 export function newReport(en: Engine, title: string): ReportDoc {
   const templates = recommendTemplates(en);
   const pages = templates.map((t) => t.build());
-  const { date, dims } = pickPlan(en);
+  const plan = pickPlan(en);
+  const { date } = plan;
   const slicerFields: FieldRef[] = [];
-  if (date) slicerFields.push({ col: date, part: 'year' });
-  dims.slice(0, 3).forEach((d) => slicerFields.push({ col: d }));
+  if (date) slicerFields.push({ col: date, part: periodFor(en, date, []) === 'year' || periodFor(en, date, []) === 'quarter' ? 'year' : 'month' });
+  (plan.caseMode ? plan.highlights : plan.dims).slice(0, 3).forEach((d) => slicerFields.push({ col: d }));
   return { title, pages, measures: [], hierarchies: [], parameters: [], bookmarks: [], slicerFields, recipe: [] };
 }
 

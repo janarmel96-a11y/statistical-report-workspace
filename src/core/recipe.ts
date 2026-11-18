@@ -1,6 +1,6 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
-import { mean, median } from './stats';
-import type { Cell, ColRole, ColType, Column, DataTable, Step } from './types';
+import { mean, median, quantile } from './stats';
+import type { Cell, ColRole, ColType, Column, DataTable, Finding, Step, ValidationRule } from './types';
 import { parseDate, parseNumber } from './parse';
 
 export const getColumn = (t: DataTable, name: string) => t.columns.find((c) => c.name === name);
@@ -52,6 +52,65 @@ function modeOf(values: Cell[]): Cell {
   counts.forEach((c, v) => { if (c > n) { n = c; best = v; } });
   return best;
 }
+
+/** The usual range of a column: beyond 1.5 times the interquartile range counts as an outlier. */
+export function outlierLimits(c: Column): { low: number; high: number; count: number } | null {
+  const xs = c.values.filter((v): v is number => typeof v === 'number');
+  if (xs.length < 4) return null;
+  const [q1, q3] = [quantile(xs, 0.25), quantile(xs, 0.75)];
+  const [low, high] = [q1 - 1.5 * (q3 - q1), q3 + 1.5 * (q3 - q1)];
+  return { low, high, count: xs.filter((v) => v < low || v > high).length };
+}
+
+/** Row positions that break a validation rule. */
+export function ruleViolations(c: Column, rule: ValidationRule): number[] {
+  const allowed = rule.allowed?.length ? new Set(rule.allowed.map((a) => a.trim().toLowerCase())) : null;
+  const out: number[] = [];
+  c.values.forEach((v, i) => {
+    if (v === null) { if (rule.required) out.push(i); return; }
+    if (typeof v === 'number' && ((rule.min !== undefined && v < rule.min) || (rule.max !== undefined && v > rule.max))) out.push(i);
+    else if (allowed && !allowed.has(String(v).trim().toLowerCase())) out.push(i);
+  });
+  return out;
+}
+
+export function describeStep(s: Step): string {
+  switch (s.op) {
+    case 'setType': return `Changed ${s.col} to ${s.type}`;
+    case 'setRole': return `Set how ${s.col} is used to ${s.role}`;
+    case 'rename': return `Renamed ${s.col} to ${s.name}`;
+    case 'drop': return `Removed column ${s.col}`;
+    case 'fill': return `Filled blanks in ${s.col} using ${s.strategy}`;
+    case 'dropMissing': return `Removed rows with a blank ${s.col}`;
+    case 'merge': return `Merged ${s.cols.join(', ')} into ${s.name}`;
+    case 'split': return `Split ${s.col} at "${s.sep}"`;
+    case 'dedupe': return 'Removed duplicate rows';
+    case 'replace': return `Replaced "${s.from}" with "${s.to}" in ${s.col}`;
+    case 'excludeRows': return `Excluded ${s.rows.length} rows: ${s.reason}`;
+    case 'setCells': return `Corrected ${s.changes.length} values in ${s.col}: ${s.reason}`;
+    case 'ageBands': return `Added ${s.name} from ${s.col}`;
+    case 'outliers': return `${s.method === 'cap' ? 'Capped' : 'Removed'} outliers in ${s.col}`;
+    case 'rule': {
+      const parts = [s.rule.required ? 'required' : '', s.rule.min !== undefined ? `at least ${s.rule.min}` : '', s.rule.max !== undefined ? `at most ${s.rule.max}` : '', s.rule.allowed?.length ? `one of ${s.rule.allowed.join(', ')}` : ''].filter(Boolean);
+      return `Rule for ${s.col}: ${parts.join(', ')}. Violations were ${s.action === 'exclude' ? 'excluded' : 'blanked'}`;
+    }
+  }
+}
+
+export interface AuditEntry { source: 'Automatic check' | 'Manual change'; action: string; detail: string; status: string }
+
+/** Everything that changed the data, in the order it was applied. */
+export function auditTrail(findings: Finding[], disabled: string[], steps: Step[]): AuditEntry[] {
+  return [
+    ...findings.filter((f) => f.kind !== 'text-number').map((f): AuditEntry => ({ source: 'Automatic check', action: f.title, detail: f.detail, status: f.steps.length ? (disabled.includes(f.id) ? 'Not applied' : 'Applied') : f.auto ? 'Applied' : 'For review' })),
+    ...steps.map((s): AuditEntry => ({ source: 'Manual change', action: describeStep(s), detail: '', status: 'Applied' })),
+  ];
+}
+
+export const AGE_BANDS = [
+  { label: '0-17', below: 18 }, { label: '18-29', below: 30 }, { label: '30-44', below: 45 },
+  { label: '45-59', below: 60 }, { label: '60 and over', below: Infinity },
+];
 
 const cellText = (c: Column, v: Cell) => (v === null ? '' : c.type === 'date' ? new Date(v as number).toISOString().slice(0, 10) : String(v));
 
@@ -119,6 +178,34 @@ export function applyStep(t: DataTable, s: Step): DataTable {
       const at = t.columns.indexOf(c);
       const out = t.columns.filter((x) => x !== c);
       out.splice(at, 0, ...cols);
+      return { ...t, columns: out };
+    }
+    case 'outliers': {
+      const c = getColumn(t, s.col);
+      const limits = c && outlierLimits(c);
+      if (!c || !limits) return t;
+      const { low, high } = limits;
+      if (s.method === 'cap') return setCol(t, s.col, { values: c.values.map((v) => (typeof v === 'number' ? Math.min(high, Math.max(low, v)) : v)) });
+      const keep: number[] = [];
+      c.values.forEach((v, i) => { if (typeof v !== 'number' || (v >= low && v <= high)) keep.push(i); });
+      return pick(t, keep);
+    }
+    case 'rule': {
+      const c = getColumn(t, s.col);
+      if (!c) return t;
+      const bad = new Set(ruleViolations(c, s.rule));
+      if (s.action === 'blank') return setCol(t, s.col, { values: c.values.map((v, i) => (bad.has(i) ? null : v)) });
+      const keep: number[] = [];
+      for (let i = 0; i < t.rowCount; i++) if (!bad.has(i)) keep.push(i);
+      return pick(t, keep);
+    }
+    case 'ageBands': {
+      const c = getColumn(t, s.col);
+      if (!c || getColumn(t, s.name)) return t;
+      const values = c.values.map((v) => (typeof v === 'number' && v >= 0 ? AGE_BANDS.find((b) => v < b.below)!.label : null));
+      const band: Column = { name: s.name, type: 'category', role: 'dimension', values, order: AGE_BANDS.map((b) => b.label) };
+      const out = [...t.columns];
+      out.splice(t.columns.indexOf(c) + 1, 0, band);
       return { ...t, columns: out };
     }
     case 'dedupe': {

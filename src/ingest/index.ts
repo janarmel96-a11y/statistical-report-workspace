@@ -4,7 +4,7 @@ import type { Progress } from './pdf';
 
 export const MAX_FILE_BYTES = 200 * 1024 * 1024;
 
-export const ACCEPT = '.xlsx,.xls,.xlsm,.csv,.tsv,.txt,.json,.ndjson,.pdf';
+export const ACCEPT = '.xlsx,.xls,.xlsm,.csv,.tsv,.txt,.json,.ndjson,.pdf,.statsecure';
 
 export class ImportError extends Error {}
 

@@ -19,6 +19,10 @@ export interface Visual {
   tooltips: ValueRef[];
   multiples?: FieldRef;
   topN?: number;
+  /** Show the lowest to highest value instead of a single figure. */
+  range?: boolean;
+  /** Show only the leading groups, without an Other bar. */
+  hideOther?: boolean;
   forecast?: boolean;
   /** Current drill position */
   drillLevel?: number;
@@ -86,6 +90,7 @@ export function queryCategories(en: Engine, field: FieldRef, values: ValueRef[],
   keys.sort((a, b) => {
     if (a === null) return 1;
     if (b === null) return -1;
+    if (col?.order) return col.order.indexOf(String(a)) - col.order.indexOf(String(b));
     if (chronological) return (a as number) - (b as number);
     return (metric.get(b) ?? 0) - (metric.get(a) ?? 0) || String(a).localeCompare(String(b));
   });
@@ -196,6 +201,24 @@ export function queryKpi(en: Engine, value: ValueRef, cs: Constraint[]): KpiResu
     out.change = prev !== 0 ? (current - prev) / Math.abs(prev) : null;
   }
   return out;
+}
+
+export interface RangeResult { low: number; high: number; label: string; note: string; common: { label: string; share: number } | null; n: number }
+
+/** Lowest to highest value, with the most common band when the data has one. */
+export function queryRange(en: Engine, col: string, cs: Constraint[]): RangeResult | null {
+  const xs = en.numbers(col, en.rows(cs));
+  if (!xs.length) return null;
+  const low = xs.reduce((a, b) => (b < a ? b : a));
+  const high = xs.reduce((a, b) => (b > a ? b : a));
+  const band = en.table.columns.find((c) => c.order);
+  let common: RangeResult['common'] = null;
+  if (band) {
+    const groups = [...en.groupRows(cs, { col: band.name }).entries()].filter(([k]) => k !== null).sort((a, b) => b[1].length - a[1].length);
+    if (groups[0]) common = { label: String(groups[0][0]), share: groups[0][1].length / xs.length };
+  }
+  const note = common ? `Most common: ${common.label} (${(common.share * 100).toFixed(1)}%)` : `${xs.length.toLocaleString('en-US')} records`;
+  return { low, high, label: `${low} to ${high}`, note, common, n: xs.length };
 }
 
 export interface ScatterResult { x: ValueRef; y: ValueRef; points: { x: number; y: number; label: string; key: Cell }[]; r: number; p: number; fit: { slope: number; intercept: number } | null; xName: string; yName: string; }
@@ -343,6 +366,10 @@ export function visualTable(en: Engine, v: Visual, base: Constraint[]): VisualTa
     case 'kpi': {
       const value = v.values[0];
       if (!value) return null;
+      if (v.range && value.kind === 'col') {
+        const r = queryRange(en, value.col, cs);
+        return r && { ...empty, headers: ['Measure', 'Lowest', 'Highest', 'Most common group'], rows: [[v.title, r.low, r.high, r.common?.label ?? null]], formats: [undefined, { format: 'integer' }, { format: 'integer' }, undefined], additive: [false, false, false, false] };
+      }
       const k = queryKpi(en, value, cs);
       return { ...empty, headers: ['Measure', 'Value', 'Previous', 'Change'], rows: [[en.valueLabel(value), k.value, k.previous, k.change]],
         formats: [undefined, { format: k.format, currency: k.currency }, { format: k.format, currency: k.currency }, { format: 'percent' }], additive: [false, false, false, false] };

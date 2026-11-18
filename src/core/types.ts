@@ -17,6 +17,8 @@ export interface Column {
   currency?: string;
   /** Decimal places seen in the source, used when rewriting corrected values. */
   decimals?: number;
+  /** Natural order of the groups, such as age bands. */
+  order?: string[];
 }
 
 export interface DataTable {
@@ -59,6 +61,8 @@ export const DEFAULT_LOCALE: LocaleOptions = { dateOrder: 'auto', numberLocale: 
 
 export type FillStrategy = 'zero' | 'mean' | 'median' | 'mode' | 'forward' | 'value';
 
+export interface ValidationRule { required?: boolean; min?: number; max?: number; allowed?: string[] }
+
 export type Step =
   | { op: 'setType'; col: string; type: ColType }
   | { op: 'setRole'; col: string; role: ColRole }
@@ -69,6 +73,9 @@ export type Step =
   | { op: 'merge'; cols: string[]; sep: string; name: string; keep?: boolean }
   | { op: 'split'; col: string; sep: string; names: string[] }
   | { op: 'dedupe' }
+  | { op: 'ageBands'; col: string; name: string }
+  | { op: 'outliers'; col: string; method: 'remove' | 'cap' }
+  | { op: 'rule'; col: string; rule: ValidationRule; action: 'exclude' | 'blank' }
   | { op: 'replace'; col: string; from: Cell; to: Cell }
   | { op: 'excludeRows'; rows: number[]; reason: string }
   | { op: 'setCells'; col: string; changes: { row: number; value: Cell }[]; reason: string };

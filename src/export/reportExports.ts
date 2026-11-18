@@ -2,15 +2,16 @@
 import { Engine } from '../core/engine';
 import { formatNumber, formatPct } from '../core/format';
 import { generateInsights, profileTable } from '../core/insights';
-import { queryKpi, visualConstraints, visualTable, type ReportDoc, type Visual } from '../core/report';
-import type { Constraint, DataTable, Finding } from '../core/types';
+import { queryKpi, queryRange, visualConstraints, visualTable, type ReportDoc, type Visual } from '../core/report';
+import { auditTrail } from '../core/recipe';
+import type { Constraint, DataTable, Finding, Step } from '../core/types';
 import { buildChart, vizTheme } from '../ui/chartOptions';
 import { renderChartImage } from '../ui/EChart';
 import { buildCsv, buildWorkbook, type WorkbookInput } from './workbook';
 import { verifyWorkbook } from './verify';
 
 export interface ExportContext {
-  report: ReportDoc; engine: Engine; table: DataTable; findings: Finding[]; constraints: Constraint[]; filterText: string; palette: 'standard' | 'bright';
+  report: ReportDoc; engine: Engine; table: DataTable; findings: Finding[]; constraints: Constraint[]; filterText: string; palette: 'standard' | 'bright'; steps?: Step[];
 }
 
 export type Progress = (message: string) => void;
@@ -58,6 +59,11 @@ function kpiList(ctx: ExportContext) {
   const kpis = ctx.report.pages.flatMap((p) => p.visuals).filter((v) => v.type === 'kpi' && v.values[0]);
   const seen = new Set<string>();
   return kpis.filter((v) => { if (seen.has(v.title)) return false; seen.add(v.title); return true; }).map((v) => {
+    const first = v.values[0];
+    if (v.range && first.kind === 'col') {
+      const r = queryRange(ctx.engine, first.col, visualConstraints(v, ctx.constraints));
+      return { label: v.title, value: null, text: r?.label ?? 'No data', note: r?.note };
+    }
     const k = queryKpi(ctx.engine, v.values[0], visualConstraints(v, ctx.constraints));
     return {
       label: v.title, value: k.value, format: k.format, currency: k.currency,
@@ -79,6 +85,7 @@ export function workbookInput(ctx: ExportContext, images: ChartImage[]): Workboo
     title: ctx.report.title, generatedAt: new Date(), filters: ctx.filterText, kpis: kpiList(ctx),
     insights: generateInsights(ctx.engine, ctx.constraints, ctx.filterText), visuals, data: ctx.table, rows,
     profile: profileTable(ctx.table), findings: ctx.findings, measures: ctx.report.measures,
+    trail: auditTrail(ctx.findings, [], ctx.steps ?? []),
   };
 }
 
@@ -137,7 +144,7 @@ export async function exportPdf(ctx: ExportContext, progress: Progress) {
     doc.setDrawColor(220); doc.setFillColor(248, 248, 246); doc.roundedRect(x, 106, tw, 76, 8, 8, 'FD');
     doc.setFontSize(9); doc.setTextColor(90); doc.text(pdfText(k.label), x + 12, 126, { maxWidth: tw - 24 });
     doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(11);
-    doc.text(pdfText(formatNumber(k.value, { format: k.format, currency: k.currency, compact: true })), x + 12, 154);
+    doc.text(pdfText('text' in k && k.text ? k.text : formatNumber(k.value, { format: 'format' in k ? k.format : undefined, currency: 'currency' in k ? k.currency : undefined, compact: true })), x + 12, 154);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(90);
     if (k.note) doc.text(pdfText(k.note), x + 12, 171, { maxWidth: tw - 24 });
   });

@@ -129,7 +129,12 @@ export function detectDateOrder(samples: string[]): { order: 'mdy' | 'dmy'; ambi
 }
 
 const ID_NAME = /(^|[\s_-])(id|ids|uuid|guid|code|sku|key|ref|reference|invoice|receipt|order[\s_-]?(no|num|number)|serial|zip|postal|phone|mobile|account|acct|ticket)($|[\s_-]|#)|(^|\s)(no\.?|#)$|Id$|ID$/;
-const RATIO_NAME = /(%|percent|pct|ratio|rate|margin|share|average|avg|mean|median|score|index|per[\s_-]|growth|yield|utili[sz]ation|price|cost per|unit[\s_-]?(cost|price)|age|rating)/i;
+const RATIO_NAME = /(%|percent|pct|\bratios?\b|\brates?\b|margin|\bshare\b|average|\bavg\b|\bmean\b|median|\bscores?\b|\bindex\b|\bper[\s_-]|growth|yield|utili[sz]ation|price|cost per|unit[\s_-]?(cost|price)|\bage\b|rating|\bsize\b)/i;
+export const AGE_NAME = /^((patient|client|person)\s+)?age(\s*\(?\s*(years?|yrs?)\s*\)?|\s+in\s+years)?$/i;
+/** Phone numbers and record numbers identify something. They are never amounts. */
+export const IDENTIFIER_NAME = /(\bcontacts?\b|\bphones?\b|\bmobile\b|cellphone|\bcell\b|\bcp\b|telephone|landline|\btel\b|\bfax\b|viber|whatsapp)|(^|[\s_-])(id|no\.?|num|number|#)\s*$/i;
+/** Personal names are private details, not groups to chart. */
+export const PERSON_NAME = /\b(family|first|middle|last|given|sur|full)[\s_-]?name\b|\bsurname\b|\bname of (patient|client|person)\b|\be-?mail\b/i;
 const YEAR_NAME = /^(fiscal[\s_-]?)?(year|yr|fy|quarter|qtr|month|week|day|period)$/i;
 const BOOL = new Map<string, boolean>([['true', true], ['false', false], ['yes', true], ['no', false], ['y', true], ['n', false]]);
 
@@ -200,8 +205,11 @@ export function inferColumn(name: string, raw: RawCell[], hint?: ColumnHint, opt
     }
   }
   const total = sample.length || 1;
+  const identifier = IDENTIFIER_NAME.test(name.trim()) && !/^number of\b/i.test(name.trim());
+  const person = PERSON_NAME.test(name.trim());
   let type: ColType;
   if (force) type = force;
+  else if (identifier || person) type = 'text';
   else if (!present.length) type = 'category';
   else if (numHits / total >= 0.8) type = 'number';
   else if (dateHits / total >= 0.8) type = 'date';
@@ -255,7 +263,7 @@ export function inferColumn(name: string, raw: RawCell[], hint?: ColumnHint, opt
   const cleanName = name.trim();
   const column: Column = {
     name: cleanName, type, values, format, currency, decimals: type === 'number' ? maxDecimals : undefined,
-    role: roleFor(cleanName, type, values, format),
+    role: !force && identifier ? 'id' : !force && person ? 'text' : roleFor(cleanName, type, values, format),
   };
   return { column, errorCells, convertedText, invalid, ambiguousDates: type === 'date' && dateDetect.ambiguous };
 }

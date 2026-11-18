@@ -3,7 +3,7 @@ import { Engine, lastPeriodIncomplete } from './engine';
 import { formatNumber, formatPct } from './format';
 import { generateInsights, pickPlan } from './insights';
 import {
-  activeField, queryBox, queryCategories, queryHeatmap, queryHistogram, queryKpi, queryScatter, queryVariance,
+  activeField, queryBox, queryCategories, queryHeatmap, queryHistogram, queryKpi, queryRange, queryScatter, queryVariance,
   visualConstraints, type ReportDoc, type Visual,
 } from './report';
 import { mannKendall, mean } from './stats';
@@ -27,7 +27,7 @@ export interface StoryScene {
   kpis?: StoryKpi[];
 }
 
-export interface VisualStory { headline: string; bullets: string[]; sentences: string[] }
+export interface VisualStory { headline: string; bullets: string[]; sentences: string[]; takeaway: string }
 
 const metricName = (v: ValueRef) => (v.kind === 'measure' ? v.name : v.agg === 'rows' ? 'records' : v.col);
 const plural = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
@@ -53,6 +53,7 @@ export function describeVisual(en: Engine, v: Visual, pageCs: Constraint[]): Vis
         `The correlation is ${s.r.toFixed(2)}, which is a ${strength} relationship, so the two values tend to ${a < 0.2 ? 'move independently' : way}.`,
         'This shows association only, so it does not prove that one causes the other.',
       ],
+      takeaway: a >= 0.4 ? `The key takeaway is that ${s.xName} and ${s.yName} are meaningfully associated.` : 'The key takeaway is that these two measures show little linear association.',
     };
   }
   if (v.type === 'histogram') {
@@ -70,6 +71,7 @@ export function describeVisual(en: Engine, v: Visual, pageCs: Constraint[]): Vis
         `The most common range is ${f(peak.start)} to ${f(peak.end)}, which holds ${formatPct(peak.count / h.n)} of all rows.`,
         `The average is ${f(h.mean)} and the median is ${f(h.median)}, so ${skew}.`,
       ],
+      takeaway: `The key takeaway is that a typical value is close to the median of ${f(h.median)}.`,
     };
   }
   if (v.type === 'box') {
@@ -88,6 +90,7 @@ export function describeVisual(en: Engine, v: Visual, pageCs: Constraint[]): Vis
         `${b.categories[top].label} has the highest median at ${f(b.stats[top].median)}.`,
         outliers ? `There are ${plural(outliers, 'unusual value')} outside the normal range, and these are worth checking.` : 'No unusual values appear outside the normal range.',
       ],
+      takeaway: `The key takeaway is that ${b.categories[top].label} has the highest typical value.`,
     };
   }
   if (!value) return null;
@@ -110,6 +113,7 @@ export function describeVisual(en: Engine, v: Visual, pageCs: Constraint[]): Vis
         `The strongest period was ${best.label} at ${formatPct(best.ch)}, and the weakest was ${worst.label} at ${formatPct(worst.ch)}.`,
         `Overall, ${ups} of ${pts.length} periods improved.${r.omitted ? ` ${r.omitted} is left out because it is not finished.` : ''}`,
       ],
+      takeaway: `The key takeaway is that the latest period ${last.ch >= 0 ? 'improved' : 'declined'} compared with the same period last year.`,
     };
   }
   if (v.type === 'heatmap') {
@@ -128,6 +132,7 @@ export function describeVisual(en: Engine, v: Visual, pageCs: Constraint[]): Vis
         `The strongest combination is ${label(hi)} at ${money(hi[2])}.`,
         `The weakest is ${label(lo)} at ${money(lo[2])}, which may show where there is room to grow.`,
       ],
+      takeaway: `The key takeaway is that results are strongest for ${label(hi)}.`,
     };
   }
   if (!field) return null;
@@ -155,6 +160,7 @@ export function describeVisual(en: Engine, v: Visual, pageCs: Constraint[]): Vis
         ...(mk ? [`Statistically, the data shows ${trend}.`] : []),
         ...(skipped ? [`${skipped} is not included in this comparison because the period is not finished.`] : []),
       ],
+      takeaway: `The key takeaway is that ${name} ended ${last.y >= first.y ? 'above' : 'below'} its starting level, with its peak in ${peak.label}.`,
     };
   }
   const r = queryCategories(en, field, [value], cs, { topN: 12 });
@@ -177,10 +183,13 @@ export function describeVisual(en: Engine, v: Visual, pageCs: Constraint[]): Vis
       ...(pts.length > 1 ? [`${bottom.label} is lowest at ${money(bottom.y)}${ratio !== null ? `, so ${top.label} is ${ratio.toFixed(1)} times larger` : ''}.`] : []),
       ...(twoShare !== null && pts.length > 2 ? [`Together, the top two groups make up ${formatPct(twoShare)} of the total, so results depend heavily on them.`] : []),
     ],
+    takeaway: share !== null && share >= 0.5 ? `The key takeaway is that ${top.label} accounts for the majority of the total.` : `The key takeaway is that ${top.label} is the leading group in ${field.col}.`,
   };
 }
 
 export interface StoryOptions { detail: DetailLevel; filterText: string; actions?: string[] }
+
+const OPENERS = ['To begin,', 'Next,', 'Moving on,', 'Turning to the next view,', 'Looking more closely,', 'Now,', 'In addition,', 'Taking this further,'];
 
 const CHART_LIMIT: Record<DetailLevel, number> = { brief: 4, standard: 8, detailed: 14 };
 
@@ -190,7 +199,8 @@ export function buildStory(en: Engine, report: ReportDoc, findings: Finding[], c
   const scenes: StoryScene[] = [];
   let n = 0;
   const add = (s: Omit<StoryScene, 'id'>) => scenes.push({ ...s, id: `scene${n++}` });
-  const take = (sentences: string[]) => (detail === 'brief' ? sentences.slice(0, 2) : detail === 'standard' ? sentences.slice(0, 3) : sentences).join(' ');
+  const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+  const take = (sentences: string[]) => (detail === 'brief' ? sentences.slice(0, 2) : detail === 'standard' ? sentences.slice(0, 3) : sentences).map(cap).join(' ');
 
   const { date } = pickPlan(en);
   const dates = date ? en.numbers(date, rows) : [];
@@ -198,7 +208,7 @@ export function buildStory(en: Engine, report: ReportDoc, findings: Finding[], c
   add({
     kind: 'title', kicker: 'Data report', title: report.title,
     bullets: [`${rows.length.toLocaleString('en-US')} records${range ? ` ${range}` : ''}`],
-    narration: `Welcome to the ${report.title} report. This review covers ${rows.length.toLocaleString('en-US')} records${range ? ` ${range}` : ''}${opts.filterText !== 'None' ? `, filtered to ${opts.filterText}` : ''}.`,
+    narration: `Good day, and welcome to the statistical review of ${report.title}. This analysis covers ${rows.length.toLocaleString('en-US')} records${range ? ` ${range}` : ''}${opts.filterText !== 'None' ? `, filtered to ${opts.filterText}` : ''}. We will review the key figures, the main patterns, and the recommended next steps.`,
   });
 
   const seenKpi = new Set<string>();
@@ -207,13 +217,22 @@ export function buildStory(en: Engine, report: ReportDoc, findings: Finding[], c
   report.pages.flatMap((p) => p.visuals).filter((v) => v.type === 'kpi' && v.values[0]).forEach((v) => {
     if (seenKpi.has(v.title) || kpis.length >= 4) return;
     seenKpi.add(v.title);
+    const first = v.values[0];
+    if (v.range && first.kind === 'col') {
+      const r = queryRange(en, first.col, visualConstraints(v, cs));
+      if (r) {
+        kpis.push({ label: v.title, value: r.label, note: r.common ? `Most common: ${r.common.label}` : undefined });
+        kpiSentences.push(`Ages range from ${r.label} years.${r.common ? ` The most common age group is ${r.common.label}.` : ''}`);
+      }
+      return;
+    }
     const k = queryKpi(en, v.values[0], visualConstraints(v, cs));
     const value = formatNumber(k.value, { format: k.format, currency: k.currency, compact: true });
     const change = k.change !== null ? `${k.change >= 0 ? 'Up' : 'Down'} ${formatPct(Math.abs(k.change))}` : undefined;
     kpis.push({ label: v.title, value, note: change });
     kpiSentences.push(`${v.title} is ${value}${change ? `, ${change.toLowerCase()} over the ${k.previousLabel}` : ''}.`);
   });
-  if (kpis.length) add({ kind: 'kpis', kicker: 'At a glance', title: 'Key figures', bullets: [], kpis, narration: `Here are the key figures. ${kpiSentences.join(' ')}` });
+  if (kpis.length) add({ kind: 'kpis', kicker: 'At a glance', title: 'Key figures', bullets: [], kpis, narration: `Let us start with the key figures. ${kpiSentences.join(' ')}` });
 
   const seen = new Set<string>();
   const charts = report.pages.flatMap((p) => p.visuals).filter((v) => !['kpi', 'insights', 'table'].includes(v.type) && !seen.has(v.title) && seen.add(v.title));
@@ -226,18 +245,21 @@ export function buildStory(en: Engine, report: ReportDoc, findings: Finding[], c
     const message = d.headline.replace(/[\d.,%$€£₱]+[KMBT]?/g, '').toLowerCase();
     if (told.has(message)) continue;
     told.add(message);
+    const opener = OPENERS[count % OPENERS.length];
     count++;
-    add({ kind: 'chart', kicker: v.title, title: d.headline, bullets: d.bullets, narration: take(d.sentences), visualId: v.id });
+    const script = take(d.sentences);
+    const linked = `${opener} ${script[0].toLowerCase()}${script.slice(1)}`;
+    add({ kind: 'chart', kicker: v.title, title: cap(d.headline), bullets: d.bullets, narration: `${linked} ${cap(d.takeaway)}`, visualId: v.id });
   }
 
   const insights = generateInsights(en, cs, opts.filterText);
   if (insights.length) {
     const top = insights.slice(0, detail === 'brief' ? 3 : 5);
-    add({ kind: 'findings', kicker: 'What stands out', title: 'Key findings', bullets: top.map((i) => i.headline), narration: `Here is what stands out. ${top.map((i) => i.text).join(' ')}` });
+    add({ kind: 'findings', kicker: 'What stands out', title: 'Key findings', bullets: top.map((i) => i.headline), narration: `Now for the main statistical findings. ${top.map((i) => i.text).join(' ')}` });
   }
 
   const applied = findings.filter((f) => f.steps.length || f.changes.length);
-  const fixed = applied.filter((f) => f.kind === 'wrong-calculation').reduce((s, f) => s + f.changes.length, 0);
+  const fixed = applied.filter((f) => f.kind === 'wrong-calculation' || f.kind === 'impossible-age').reduce((s, f) => s + f.changes.length, 0);
   const removed = applied.flatMap((f) => f.steps).reduce((s, x) => s + (x.op === 'excludeRows' ? x.rows.length : 0), 0);
   if (fixed || removed) {
     const parts = [fixed ? plural(fixed, 'calculation') + ' corrected' : '', removed ? plural(removed, 'row') + ' removed' : ''].filter(Boolean);
@@ -246,9 +268,9 @@ export function buildStory(en: Engine, report: ReportDoc, findings: Finding[], c
 
   if (opts.actions?.length) {
     const list = opts.actions.slice(0, 4);
-    add({ kind: 'actions', kicker: 'Next steps', title: 'Recommended actions', bullets: list, narration: `Here are the recommended next steps. ${list.map((a) => (/[.!?]$/.test(a) ? a : `${a}.`)).join(' ')}` });
+    add({ kind: 'actions', kicker: 'Next steps', title: 'Recommended actions', bullets: list, narration: `Based on this analysis, here are the recommended next steps. ${list.map((a) => (/[.!?]$/.test(a) ? a : `${a}.`)).join(' ')}` });
   }
 
-  add({ kind: 'closing', kicker: 'Summary', title: 'Thank you', bullets: insights[0] ? [insights[0].headline] : [], narration: insights[0] ? `To close, the main point to remember is this. ${insights[0].text} Thank you for watching.` : 'Thank you for watching.' });
+  add({ kind: 'closing', kicker: 'Summary', title: 'Thank you', bullets: insights[0] ? [insights[0].headline] : [], narration: insights[0] ? `In summary, the main point to remember is this. ${insights[0].text} Thank you for watching.` : 'In summary, this concludes the statistical review. Thank you for watching.' });
   return scenes;
 }

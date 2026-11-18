@@ -5,6 +5,7 @@ import {
   AlertTriangle, AreaChart, BarChart2, BarChart3, BoxSelect, Calendar, CheckCircle2, Columns3, Dot, GripVertical, Hash, Layers, LineChart,
   ListTree, PieChart, Plus, ScatterChart, Sigma, SquareStack, Table2, TrendingUp, Type, X, Grid3x3, Lightbulb,
 } from 'lucide-react';
+import { measureKind } from '../core/analytics';
 import { AGG_OPTIONS, aggWarning, defaultAgg } from '../core/engine';
 import { formatNumber, formatPct } from '../core/format';
 import { FUNCTIONS, validateMeasure } from '../core/measures';
@@ -13,6 +14,7 @@ import { anova, chiSquare, kruskalWallis, mannWhitney, meanCI, welchT, type Test
 import type { Agg, Cell, Column, Constraint, DatePart, FieldRef, Measure, NumberFormat, ValueRef } from '../core/types';
 import { useStore } from '../state/store';
 import { AssistantPanel } from './AssistantPanel';
+import { StatsPanel } from './StatsPanel';
 import { InsightsList } from './VisualCard';
 
 const GALLERY: [VisualType, string, ReactNode][] = [
@@ -361,14 +363,14 @@ function DataTab() {
       <p className="hint">{t.rowCount.toLocaleString()} rows and {t.columns.length} columns after corrections.</p>
       <ul className="role-list">
         {rows.map(({ c, missing }) => (
-          <li key={c.name}><b>{c.name}</b><small>{c.role === 'id' ? 'ID, never added' : c.role === 'ratio' ? 'Rate, averaged' : c.role === 'measure' ? 'Metric, added up' : 'Group'} · {formatPct(missing, 0)} blank</small></li>
+          <li key={c.name}><b>{c.name}</b><small>{measureKind(c)} · {c.role === 'measure' ? 'added up' : c.role === 'ratio' ? 'averaged' : 'never added'} · {formatPct(missing, 0)} blank</small></li>
         ))}
       </ul>
     </>
   );
 }
 
-const TABS = ['Assistant', 'Fields', 'Findings', 'Measures', 'Tests', 'Data'] as const;
+const TABS = ['Assistant', 'Fields', 'Findings', 'Measures', 'Stats', 'Data'] as const;
 
 export function SidePanel({ visual, cs, onClose }: { visual: Visual | undefined; cs: Constraint[]; onClose: () => void }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Fields');
@@ -383,7 +385,7 @@ export function SidePanel({ visual, cs, onClose }: { visual: Visual | undefined;
         {tab === 'Fields' && <FieldsTab key={visual?.id} visual={visual} />}
         {tab === 'Findings' && <InsightsList cs={cs} limit={20} />}
         {tab === 'Measures' && <MeasuresTab />}
-        {tab === 'Tests' && <TestsTab cs={cs} />}
+        {tab === 'Stats' && <StatsPanel cs={cs} compare={<TestsTab cs={cs} />} />}
         {tab === 'Data' && <DataTab />}
       </div>
     </aside>

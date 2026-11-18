@@ -4,6 +4,7 @@ import { useStore } from './state/store';
 import { BusyOverlay, Toasts, useDarkMode } from './ui/common';
 import { Home } from './ui/Home';
 import { ImportDialog } from './ui/ImportDialog';
+import { UnlockDialog } from './ui/UnlockDialog';
 
 const Prepare = lazy(() => import('./ui/Prepare').then((m) => ({ default: m.Prepare })));
 const Report = lazy(() => import('./ui/Report').then((m) => ({ default: m.Report })));
@@ -28,6 +29,7 @@ export function App() {
   const hasTable = useStore((s) => Boolean(s.table));
   const hasReport = useStore((s) => Boolean(s.report && s.engine));
   const pending = useStore((s) => Boolean(s.pending));
+  const locked = useStore((s) => Boolean(s.locked));
   const dark = useDarkMode();
 
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
@@ -51,6 +53,7 @@ export function App() {
         {route === 'report' && hasReport ? <Report /> : route === 'prepare' && hasTable ? <Prepare /> : <Home />}
       </Suspense>
       {pending && <ImportDialog />}
+      {locked && <UnlockDialog />}
       <BusyOverlay />
       <Toasts />
     </ErrorBoundary>
