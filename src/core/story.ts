@@ -1,5 +1,5 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
-import { Engine, lastPeriodIncomplete } from './engine';
+import { Engine, groupConstraint, lastPeriodIncomplete } from './engine';
 import { formatNumber, formatPct } from './format';
 import { generateInsights, pickPlan } from './insights';
 import {
@@ -150,22 +150,29 @@ export function describeVisual(en: Engine, v: Visual, pageCs: Constraint[]): Vis
     const ch = first.y !== 0 ? (last.y - first.y) / Math.abs(first.y) : null;
     const mk = pts.length >= 8 ? mannKendall(pts.map((p) => p.y)) : null;
     const trend = mk?.trend === 'up' ? 'a steady upward trend' : mk?.trend === 'down' ? 'a steady downward trend' : 'no steady long-term direction';
+    // Two single periods can differ widely by chance, so a change is only claimed when the whole series supports it.
+    const unsteady = mk !== null && !(ch !== null && ((mk.trend === 'up' && ch >= 0) || (mk.trend === 'down' && ch < 0)));
     return {
-      headline: ch === null ? `${name} peaked in ${peak.label}` : `${name} ${ch >= 0 ? 'rose' : 'fell'} ${formatPct(Math.abs(ch))} from ${first.label} to ${last.label}`,
+      headline: ch === null || unsteady ? `${name} peaked in ${peak.label} at ${money(peak.y)}` : `${name} ${ch >= 0 ? 'rose' : 'fell'} ${formatPct(Math.abs(ch))} from ${first.label} to ${last.label}`,
       bullets: [`Peak: ${peak.label}, ${money(peak.y)}`, `Lowest: ${low.label}, ${money(low.y)}`, `Latest: ${last.label}, ${money(last.y)}`],
       sentences: [
         `This chart follows ${name} over ${plural(pts.length, 'period')}, from ${first.label} to ${last.label}.`,
-        `${name} moved from ${money(first.y)} to ${money(last.y)}${ch === null ? '' : `, a ${ch >= 0 ? 'rise' : 'fall'} of ${formatPct(Math.abs(ch))}`}.`,
+        unsteady
+          ? `${name} moved between ${money(low.y)} and ${money(peak.y)} from period to period, without a steady rise or fall.`
+          : `${name} moved from ${money(first.y)} to ${money(last.y)}${ch === null ? '' : `, a ${ch >= 0 ? 'rise' : 'fall'} of ${formatPct(Math.abs(ch))}`}.`,
         `The highest point was ${peak.label} at ${money(peak.y)}, and the lowest was ${low.label} at ${money(low.y)}.`,
         ...(mk ? [`Statistically, the data shows ${trend}.`] : []),
         ...(skipped ? [`${skipped} is not included in this comparison because the period is not finished.`] : []),
       ],
-      takeaway: `The key takeaway is that ${name} ended ${last.y >= first.y ? 'above' : 'below'} its starting level, with its peak in ${peak.label}.`,
+      takeaway: unsteady
+        ? `The key takeaway is that ${name} changed from period to period with no steady direction, and peaked in ${peak.label}.`
+        : `The key takeaway is that ${name} ended ${last.y >= first.y ? 'above' : 'below'} its starting level, with its peak in ${peak.label}.`,
     };
   }
   const r = queryCategories(en, field, [value], cs, { topN: 12 });
-  const pts = r.categories.map((c, i) => ({ label: c.label, y: r.series[0].data[i], other: c.isOther }))
-    .filter((p): p is { label: string; y: number; other: boolean | undefined } => p.y !== null && !p.other).sort((a, b) => b.y - a.y);
+  // A blank means the value was never recorded, so it is reported separately and never ranked as a group.
+  const pts = r.categories.map((c, i) => ({ label: c.label, y: r.series[0].data[i], other: c.isOther || c.key === null }))
+    .filter((p): p is { label: string; y: number; other: boolean } => p.y !== null && !p.other).sort((a, b) => b.y - a.y);
   if (!pts.length) return null;
   const top = pts[0];
   const bottom = pts[pts.length - 1];
@@ -174,12 +181,15 @@ export function describeVisual(en: Engine, v: Visual, pageCs: Constraint[]): Vis
   const avg = mean(pts.map((p) => p.y));
   const twoShare = whole && pts[1] ? (top.y + pts[1].y) / whole : null;
   const ratio = bottom.y > 0 && pts.length > 1 ? top.y / bottom.y : null;
+  const blank = whole && en.groupRows(cs, field).has(null) ? en.evaluate(value, [...cs, groupConstraint(field, null)]) : null;
+  const blankShare = whole && blank ? blank / whole : null;
   return {
     headline: `${top.label} leads ${field.col}${share !== null ? ` with ${formatPct(share)}` : ''}`,
-    bullets: [`Highest: ${top.label}, ${money(top.y)}`, ...(pts.length > 1 ? [`Lowest: ${bottom.label}, ${money(bottom.y)}`] : []), ...(twoShare !== null && pts.length > 2 ? [`Top two make up ${formatPct(twoShare)}`] : [`Average per group: ${money(avg)}`])],
+    bullets: [`Highest: ${top.label}, ${money(top.y)}`, ...(pts.length > 1 ? [`Lowest: ${bottom.label}, ${money(bottom.y)}`] : []), blankShare !== null ? `Not recorded: ${formatPct(blankShare)}` : twoShare !== null && pts.length > 2 ? `Top two make up ${formatPct(twoShare)}` : `Average per group: ${money(avg)}`],
     sentences: [
       `This chart compares ${name} across ${plural(pts.length, 'group')} of ${field.col}.`,
       `${top.label} is highest at ${money(top.y)}${share !== null ? `, which is ${formatPct(share)} of the total` : ''}.`,
+      ...(blankShare !== null ? [`${formatPct(blankShare)} of the total has no ${field.col} recorded, so it is not ranked as a group.`] : []),
       ...(pts.length > 1 ? [`${bottom.label} is lowest at ${money(bottom.y)}${ratio !== null ? `, so ${top.label} is ${ratio.toFixed(1)} times larger` : ''}.`] : []),
       ...(twoShare !== null && pts.length > 2 ? [`Together, the top two groups make up ${formatPct(twoShare)} of the total, so results depend heavily on them.`] : []),
     ],
