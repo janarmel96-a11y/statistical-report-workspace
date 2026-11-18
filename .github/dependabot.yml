@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
+    ignore:
+      # Version 2 replaces the layout API used by the report canvas.
+      - dependency-name: react-grid-layout
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-grid-layout"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
