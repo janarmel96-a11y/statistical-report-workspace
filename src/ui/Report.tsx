@@ -14,6 +14,7 @@ import { pageConstraints, useStore } from '../state/store';
 import { AreaPicker } from './AreaPicker';
 import { Logo, Modal, Popover, ThemeSwitch, useDarkMode } from './common';
 import { FieldIcon } from './FieldIcon';
+import { NameInput } from './NameInput';
 import { ElementCard } from './PageElements';
 import { SidePanel, type SideTab } from './SidePanel';
 import { VisualCard, type DrillTarget } from './VisualCard';
@@ -212,7 +213,7 @@ export function Report() {
       <header className="topbar no-print">
         <button className="icon-btn" aria-label="Back to home" title="Back to home" onClick={() => s.setRoute('home')}><ArrowLeft size={18} /></button>
         <Logo />
-        <input className="title-input" aria-label="Report title" value={report.title} onChange={(e) => s.mutateReport((r) => ({ ...r, title: e.target.value }), false)} />
+        <NameInput className="title-input" label="Report name" value={report.title} onCommit={s.renameProject} />
         <div className="spacer" />
         <button className="icon-btn" aria-label="Undo" title="Undo" disabled={!s.undoStack.length} onClick={s.undoReport}><Undo2 size={17} /></button>
         <button className="icon-btn" aria-label="Redo" title="Redo" disabled={!s.redoStack.length} onClick={s.redoReport}><Redo2 size={17} /></button>

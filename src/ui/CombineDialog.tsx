@@ -2,12 +2,14 @@
 import { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, CheckCircle2, Download, FileSpreadsheet, Plus, Trash2, Unlink } from 'lucide-react';
 import { canMerge, checkCombined, combineSources, matchColumns, mergeColumns, separateColumn, toRawTable, type CombineColumn, type CombineOptions, type CombineSource } from '../core/combine';
+import { nameTaken } from '../core/names';
 import type { RawTable } from '../core/types';
 import { ACCEPT, readFile } from '../ingest';
 import { useStore } from '../state/store';
 import { Modal } from './common';
+import { NameInput } from './NameInput';
 
-interface Item { key: string; fileName: string; tables: RawTable[]; table: number }
+interface Item { key: string; fileName: string; label: string; tables: RawTable[]; table: number }
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const plainName = (f: string) => f.replace(/\.[^.]+$/, '');
@@ -15,6 +17,7 @@ const plainName = (f: string) => f.replace(/\.[^.]+$/, '');
 export default function CombineDialog({ onClose }: { onClose: () => void }) {
   const confirmImport = useStore((s) => s.confirmImport);
   const [items, setItems] = useState<Item[]>([]);
+  const [outputName, setOutputName] = useState('Combined files');
   const [edited, setEdited] = useState<CombineColumn[] | null>(null);
   const [addSource, setAddSource] = useState(true);
   const [sourceHeader, setSourceHeader] = useState('Source File');
@@ -27,7 +30,7 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
 
   const sources = useMemo<CombineSource[]>(() => items.map((it) => {
     const t = it.tables[it.table];
-    return { name: plainName(it.fileName), headers: t.headers.map((h) => String(h ?? '').trim()), rows: t.rows };
+    return { name: it.label, headers: t.headers.map((h) => String(h ?? '').trim()), rows: t.rows };
   }), [items]);
   const matched = useMemo(() => matchColumns(sources), [sources]);
   const columns = edited ?? matched;
@@ -38,6 +41,12 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
   const similar = columns.map((c, i) => ({ c, i })).filter((x) => x.c.similar);
   const partial = columns.map((c, i) => ({ c, i })).filter((x) => x.c.map.some((p) => p === null));
   const change = (next: Item[]) => { setItems(next); setEdited(null); setDone(null); };
+  const renameFile = (key: string, label: string) => {
+    if (nameTaken(label, items.filter((x) => x.key !== key).map((x) => x.label))) { setError(`Another file is already named ${label}. Choose a different name.`); return false; }
+    setError(null); setDone(null);
+    setItems((list) => list.map((x) => (x.key === key ? { ...x, label } : x)));
+    return true;
+  };
 
   const addFiles = async (list: FileList | null) => {
     if (!list?.length) return;
@@ -50,7 +59,9 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
         setBusy(`Reading ${f.name}`);
         const tables = await readFile(f, (message) => setBusy(message));
         const largest = tables.reduce((best, t, i) => (t.rows.length > tables[best].rows.length ? i : best), 0);
-        next.push({ key, fileName: f.name, tables, table: largest });
+        let label = plainName(f.name);
+        for (let n = 2; nameTaken(label, next.map((x) => x.label)); n++) label = `${plainName(f.name)} (${n})`;
+        next.push({ key, fileName: f.name, label, tables, table: largest });
       } catch (e) { setError((e as Error).message); }
     }
     setBusy(null);
@@ -62,18 +73,18 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
     setError(null); setDone(null);
     const problem = checkCombined(sources, columns, result, opts);
     if (problem) { setError(`${problem} Nothing was created.`); return; }
-    if (kind === 'report') { confirmImport([toRawTable(result, 'Combined files')], { mode: 'single' }); onClose(); return; }
+    if (kind === 'report') { confirmImport([toRawTable(result, outputName)], { mode: 'single' }, outputName); onClose(); return; }
     setBusy('Creating the combined file');
     await new Promise((r) => setTimeout(r, 30));
     try {
-      const [{ download }, combined] = await Promise.all([import('../export/reportExports'), import('../export/combined')]);
-      if (kind === 'csv') download(combined.buildCombinedCsv(result), 'Combined files.csv', 'text/csv;charset=utf-8');
+      const [{ download, safeFileName }, combined] = await Promise.all([import('../export/reportExports'), import('../export/combined')]);
+      if (kind === 'csv') download(combined.buildCombinedCsv(result), `${safeFileName(outputName)}.csv`, 'text/csv;charset=utf-8');
       else {
         const buf = await combined.buildCombinedWorkbook(sources, columns, result);
         setBusy('Checking every cell in the finished file');
         await new Promise((r) => setTimeout(r, 30));
         combined.verifyCombinedWorkbook(buf, result);
-        download(buf, 'Combined files.xlsx', XLSX_MIME);
+        download(buf, `${safeFileName(outputName)}.xlsx`, XLSX_MIME);
       }
       setDone(`Combined ${result.rows.length.toLocaleString()} rows from ${sources.length} files. Every value was checked.`);
     } catch (e) { setError(`${(e as Error).message} Nothing was downloaded.`); }
@@ -99,7 +110,10 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
           {items.map((it, i) => (
             <li key={it.key}>
               <FileSpreadsheet size={17} />
-              <span><b title={it.fileName}>{it.fileName}</b><small>{it.tables[it.table].rows.length.toLocaleString()} rows · {it.tables[it.table].headers.length} columns</small></span>
+              <span>
+                <NameInput className="name-plain" label={`File ${i + 1} name`} value={it.label} onCommit={(label) => renameFile(it.key, label)} />
+                <small title={it.fileName}>{it.fileName} · {it.tables[it.table].rows.length.toLocaleString()} rows · {it.tables[it.table].headers.length} columns</small>
+              </span>
               {it.tables.length > 1 && <select aria-label={`Table to use from ${it.fileName}`} value={it.table} onChange={(e) => change(items.map((x, k) => (k === i ? { ...x, table: Number(e.target.value) } : x)))}>{it.tables.map((t, k) => <option key={k} value={k}>{t.name}</option>)}</select>}
               <button className="icon-btn sm" aria-label={`Remove ${it.fileName}`} onClick={() => change(items.filter((_, k) => k !== i))}><Trash2 size={14} /></button>
             </li>
@@ -108,6 +122,7 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
       )}
 
       {result && <>
+        <label className="field compact report-name">Combined file name <NameInput label="Combined file name" value={outputName} onCommit={setOutputName} /></label>
         <dl className="combine-stats">
           <div><dt>Combined rows</dt><dd>{result.rows.length.toLocaleString()}</dd></div>
           <div><dt>Columns</dt><dd>{columns.length}</dd></div>

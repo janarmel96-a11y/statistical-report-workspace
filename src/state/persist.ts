@@ -96,6 +96,14 @@ export async function loadProject(id: string): Promise<ProjectRecord | undefined
 
 export const deleteProject = (id: string) => tx(STORE, 'readwrite', (s) => s.delete(id));
 
+/** Renames a saved report. It stays encrypted the whole time. */
+export async function renameSavedProject(id: string, name: string): Promise<boolean> {
+  const p = await loadProject(id);
+  if (!p) return false;
+  await saveProject({ ...p, name, report: p.report ? { ...p.report, title: name } : p.report });
+  return true;
+}
+
 /** Removes every saved report and the encryption key from this browser. */
 export function deleteAllProjects(): Promise<void> {
   return new Promise((resolve, reject) => {

@@ -1,10 +1,11 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { ArrowRight, BarChart3, Combine, FileSpreadsheet, FileUp, ListChecks, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { ArrowRight, BarChart3, Combine, FileSpreadsheet, FileUp, ListChecks, Pencil, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { ACCEPT } from '../ingest';
-import { deleteProject, listProjects, loadProject, type ProjectSummary } from '../state/persist';
+import { deleteProject, listProjects, loadProject, renameSavedProject, type ProjectSummary } from '../state/persist';
 import { useStore } from '../state/store';
 import { Logo, ThemeSwitch } from './common';
+import { NameInput } from './NameInput';
 import { PrivacyDialog } from './PrivacyDialog';
 
 const CombineDialog = lazy(() => import('./CombineDialog'));
@@ -32,7 +33,17 @@ export function Home() {
   const [privacy, setPrivacy] = useState(false);
   const [combining, setCombining] = useState(false);
   const [recent, setRecent] = useState<ProjectSummary[]>([]);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+
+  const renameRecent = async (id: string, name: string) => {
+    setRenaming(null);
+    if (name === recent.find((r) => r.id === id)?.name) return;
+    if (!await renameSavedProject(id, name)) { toast('error', 'This report is no longer available.'); return; }
+    setRecent((list) => list.map((r) => (r.id === id ? { ...r, name } : r)));
+    const open = useStore.getState();
+    if (open.projectId === id) open.renameProject(name);
+  };
 
   useEffect(() => { void listProjects().then(setRecent); }, []);
 
@@ -93,10 +104,15 @@ export function Home() {
               <ul>
                 {recent.slice(0, 6).map((r) => (
                   <li key={r.id}>
-                    <button className="recent-open" onClick={async () => { const p = await loadProject(r.id); if (p) openRecord(p); else toast('error', 'This report is no longer available.'); }}>
-                      <b>{r.name}</b>
-                      <small>{r.rowCount.toLocaleString()} rows · {r.columnCount} columns · {new Date(r.updatedAt).toLocaleDateString()}</small>
-                    </button>
+                    {renaming === r.id ? (
+                      <div className="recent-rename"><NameInput autoFocus label={`New name for ${r.name}`} value={r.name} onCommit={(name) => { void renameRecent(r.id, name); }} onCancel={() => setRenaming(null)} /></div>
+                    ) : (
+                      <button className="recent-open" onClick={async () => { const p = await loadProject(r.id); if (p) openRecord(p); else toast('error', 'This report is no longer available.'); }}>
+                        <b>{r.name}</b>
+                        <small>{r.rowCount.toLocaleString()} rows · {r.columnCount} columns · {new Date(r.updatedAt).toLocaleDateString()}</small>
+                      </button>
+                    )}
+                    <button className="icon-btn" aria-label={`Rename ${r.name}`} title="Rename" onClick={() => setRenaming(r.id)}><Pencil size={15} /></button>
                     <button className="icon-btn" aria-label={`Remove ${r.name}`} title="Remove from this device" onClick={async () => { await deleteProject(r.id); setRecent((x) => x.filter((y) => y.id !== r.id)); }}><Trash2 size={15} /></button>
                   </li>
                 ))}

@@ -75,7 +75,8 @@ interface State {
   importFiles(files: File[]): Promise<void>;
   loadSample(url: string, name: string): Promise<void>;
   cancelImport(): void;
-  confirmImport(tables: RawTable[], combine: CombineConfig): void;
+  confirmImport(tables: RawTable[], combine: CombineConfig, name?: string): void;
+  renameProject(name: string): void;
   openRecord(p: ProjectRecord): void;
   setLocale(l: LocaleOptions): void;
   addStep(s: Step): void;
@@ -264,10 +265,16 @@ export const useStore = create<State>((set, get) => {
       set({ busy: null });
     },
     cancelImport: () => set({ pending: null }),
-    confirmImport: (tables, combine) => {
-      startProject(tables, combine);
+    confirmImport: (tables, combine, name) => {
+      startProject(tables, combine, name ? { name } : {});
       get().setRoute('prepare');
       persist();
+    },
+    renameProject: (name) => {
+      const s = get();
+      if (name === s.projectName && (!s.report || s.report.title === name)) return;
+      set({ projectName: name });
+      if (s.report) get().mutateReport((r) => ({ ...r, title: name }), false); else persist();
     },
     openRecord: (p) => {
       startProject(p.raws, p.combine, p);

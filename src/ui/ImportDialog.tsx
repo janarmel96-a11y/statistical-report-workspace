@@ -1,11 +1,13 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useMemo, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { nameTaken } from '../core/names';
 import { uniqueHeaders } from '../core/parse';
 import type { RawTable } from '../core/types';
 import type { CombineConfig } from '../state/persist';
 import { useStore } from '../state/store';
 import { Modal } from './common';
+import { NameInput } from './NameInput';
 
 const cellText = (v: unknown) => (v === null || v === undefined ? '' : typeof v === 'object' ? new Date((v as { date: number }).date).toISOString().slice(0, 10) : String(v));
 
@@ -16,6 +18,9 @@ export function ImportDialog() {
   const [chosen, setChosen] = useState<number[]>([0]);
   const [preview, setPreview] = useState(0);
   const [mode, setMode] = useState<'append' | 'join'>('append');
+  const [names, setNames] = useState(() => pending.map((p) => p.name));
+  const [reportName, setReportName] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
   const tables: RawTable[] = chosen.map((i) => pending[i]);
   const shared = useMemo(() => {
     if (tables.length < 2) return [];
@@ -30,9 +35,16 @@ export function ImportDialog() {
   const rightKey = right || (shared.includes(leftKey) ? leftKey : rightCols[0]);
   const t = pending[preview];
 
+  const defaultName = tables.length > 1 && mode === 'append' ? 'Combined files' : names[chosen[0]] ?? '';
+  const rename = (i: number, name: string) => {
+    if (nameTaken(name, names.filter((_, k) => k !== i))) { setNameError(`Another table is already named ${name}. Choose a different name.`); return false; }
+    setNameError(null);
+    setNames((n) => n.map((x, k) => (k === i ? name : x)));
+    return true;
+  };
   const submit = () => {
     const combine: CombineConfig = tables.length === 1 ? { mode: 'single' } : mode === 'append' ? { mode: 'append' } : { mode: 'join', leftKey, rightKey };
-    confirm(tables, combine);
+    confirm(chosen.map((i) => ({ ...pending[i], name: names[i] })), combine, tables.length > 1 ? reportName ?? defaultName : names[chosen[0]]);
   };
 
   return (
@@ -43,11 +55,12 @@ export function ImportDialog() {
       <div className="import-grid">
         <ul className="table-list">
           {pending.map((p, i) => (
-            <li key={i} className={preview === i ? 'on' : ''}>
-              <label>
-                <input type="checkbox" checked={chosen.includes(i)} onChange={(e) => { setChosen((c) => (e.target.checked ? [...c, i].sort((a, b) => a - b) : c.filter((x) => x !== i))); setPreview(i); }} />
-                <span onClick={(e) => { e.preventDefault(); setPreview(i); }}><b>{p.name}</b><small>{p.rows.length.toLocaleString()} rows · {p.headers.length} columns{p.confidence !== undefined ? ` · ${Math.round(p.confidence * 100)}% read confidence` : ''}</small></span>
-              </label>
+            <li key={i} className={`table-pick ${preview === i ? 'on' : ''}`} onClick={() => setPreview(i)}>
+              <input type="checkbox" aria-label={`Use ${names[i]}`} checked={chosen.includes(i)} onChange={(e) => { setChosen((c) => (e.target.checked ? [...c, i].sort((a, b) => a - b) : c.filter((x) => x !== i))); setPreview(i); }} />
+              <span>
+                <NameInput className="name-plain" label={`Table ${i + 1} name`} value={names[i]} onCommit={(name) => rename(i, name)} onFocus={() => setPreview(i)} />
+                <small title={p.source}>{p.source} · {p.rows.length.toLocaleString()} rows · {p.headers.length} columns{p.confidence !== undefined ? ` · ${Math.round(p.confidence * 100)}% read confidence` : ''}</small>
+              </span>
             </li>
           ))}
         </ul>
@@ -61,6 +74,8 @@ export function ImportDialog() {
           </div>
         </div>
       </div>
+      {nameError && <p className="notice bad" role="alert">{nameError}</p>}
+      {tables.length > 1 && <label className="field compact report-name">Report name <NameInput label="Report name" value={reportName ?? defaultName} onCommit={setReportName} /></label>}
       {tables.length > 1 && (
         <fieldset className="combine">
           <legend>How should these tables be combined?</legend>

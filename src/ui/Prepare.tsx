@@ -8,6 +8,7 @@ import { auditTrail, outlierLimits, ruleViolations } from '../core/recipe';
 import type { Cell, ColRole, ColType, Column, FillStrategy, Finding } from '../core/types';
 import { useStore } from '../state/store';
 import { Logo, Modal, ThemeSwitch } from './common';
+import { NameInput } from './NameInput';
 
 const ROW_H = 32;
 const COL_W = 168;
@@ -233,7 +234,10 @@ export function Prepare() {
       <header className="topbar">
         <button className="icon-btn" aria-label="Back to home" title="Back to home" onClick={() => s.setRoute('home')}><ArrowLeft size={18} /></button>
         <Logo />
-        <div className="topbar-title"><b>{s.projectName}</b><small>{table.rowCount.toLocaleString()} rows · {table.columns.length} columns</small></div>
+        <div className="topbar-title">
+          <NameInput className="title-input" label="File name" value={s.projectName} onCommit={s.renameProject} />
+          <small title={s.raws.map((r) => r.source).join(', ')}>{s.raws.length === 1 ? `From ${s.raws[0].source}` : `From ${s.raws.length} files`} · {table.rowCount.toLocaleString()} rows · {table.columns.length} columns</small>
+        </div>
         <div className="spacer" />
         <button className="icon-btn" aria-label="Undo" title="Undo" disabled={!s.steps.length} onClick={s.undoStep}><Undo2 size={17} /></button>
         <button className="icon-btn" aria-label="Redo" title="Redo" disabled={!s.redoSteps.length} onClick={s.redoStep}><Redo2 size={17} /></button>
