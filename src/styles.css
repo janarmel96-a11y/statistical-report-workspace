@@ -471,7 +471,23 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .scene-open small { color: var(--ink-2); font-size: 11px; }
 .scene-tools { display: flex; padding: 0 3px 2px; }
 .stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px; }
-.stage-view { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+.stage-view { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+.arrange { position: absolute; overflow: hidden; border-radius: 10px; }
+.arrange-box { position: absolute; cursor: move; touch-action: none; border: 1.5px dashed transparent; border-radius: 6px; outline: none; }
+.arrange:hover .arrange-box { border-color: rgba(255, 255, 255, .55); box-shadow: 0 0 0 1px rgba(8, 12, 20, .35); }
+.arrange .arrange-box.on, .arrange-box:focus-visible { border: 2px solid var(--accent); box-shadow: 0 0 0 1px #fff; }
+.arrange-tag { position: absolute; top: 4px; left: 4px; padding: 1px 6px; border-radius: 4px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; white-space: nowrap; pointer-events: none; opacity: 0; }
+.arrange-box:hover .arrange-tag, .arrange-box.on .arrange-tag { opacity: 1; }
+.arrange-handle { position: absolute; width: 12px; height: 12px; margin: -6px; border: 2px solid var(--accent); border-radius: 3px; background: #fff; touch-action: none; }
+.arrange-handle::after { content: ''; position: absolute; inset: -8px; }
+.arrange-handle.nw { left: 0; top: 0; cursor: nwse-resize; }
+.arrange-handle.n { left: 50%; top: 0; cursor: ns-resize; }
+.arrange-handle.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.arrange-handle.e { left: 100%; top: 50%; cursor: ew-resize; }
+.arrange-handle.se { left: 100%; top: 100%; cursor: nwse-resize; }
+.arrange-handle.s { left: 50%; top: 100%; cursor: ns-resize; }
+.arrange-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
+.arrange-handle.w { left: 0; top: 50%; cursor: ew-resize; }
 .stage-view canvas { display: block; max-width: 100%; max-height: 100%; border-radius: 10px; box-shadow: var(--shadow-lg); }
 .transport { display: flex; align-items: center; gap: 8px; justify-content: center; }
 .timeline { position: relative; display: flex; gap: 2px; height: 42px; cursor: pointer; border-radius: 8px; }

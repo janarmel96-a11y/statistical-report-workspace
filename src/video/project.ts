@@ -7,6 +7,29 @@ export type Animation = 'wipe' | 'zoom' | 'rise';
 export type Music = 'none' | 'calm' | 'bright';
 export type Quality = 720 | 1080;
 
+/** A position on the frame. Every value is a share of the frame, so layouts survive a size change. */
+export interface Box { x: number; y: number; w: number; h: number }
+export type BoxName = 'media' | 'points' | 'presenter';
+export type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+export const MIN_BOX = 0.08;
+
+const within = (v: number, low: number, high: number) => Math.max(low, Math.min(high, v));
+
+/** Moves a box while keeping all of it on the frame. */
+export function moveBox(b: Box, dx: number, dy: number): Box {
+  return { ...b, x: within(b.x + dx, 0, Math.max(0, 1 - b.w)), y: within(b.y + dy, 0, Math.max(0, 1 - b.h)) };
+}
+
+/** Drags one edge or corner, keeping the box on the frame and large enough to grab. */
+export function resizeBox(b: Box, handle: Handle, dx: number, dy: number): Box {
+  let [left, top, right, bottom] = [b.x, b.y, b.x + b.w, b.y + b.h];
+  if (handle.includes('w')) left = within(left + dx, 0, right - MIN_BOX);
+  if (handle.includes('e')) right = within(right + dx, left + MIN_BOX, 1);
+  if (handle.includes('n')) top = within(top + dy, 0, bottom - MIN_BOX);
+  if (handle.includes('s')) bottom = within(bottom + dy, top + MIN_BOX, 1);
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
 export interface VideoScene {
   id: string;
   kind: SceneKind;
@@ -19,6 +42,8 @@ export interface VideoScene {
   transition: Transition;
   animation: Animation;
   background?: string;
+  /** Items the person has moved or resized on this scene. */
+  layout?: Partial<Record<BoxName, Box>>;
   /** Set when the person fixes this scene's length by hand. */
   seconds?: number;
 }

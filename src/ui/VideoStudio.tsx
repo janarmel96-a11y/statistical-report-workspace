@@ -1,17 +1,18 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Captions, Copy, Download, ImagePlus, Mic, Pause, Play, Plus, Redo2, SkipBack, Square, Trash2, Undo2, Video, Volume2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Captions, Copy, Download, ImagePlus, LayoutGrid, Mic, Pause, Play, Plus, Redo2, RotateCcw, SkipBack, Square, Trash2, Undo2, Video, Volume2, X } from 'lucide-react';
 import { emptyMemory, suggestImprovements } from '../core/assistant';
 import { keyLabel } from '../core/report';
 import { buildStory, type DetailLevel } from '../core/story';
 import { chartImages, download, safeFileName, type ExportContext } from '../export/reportExports';
 import { filterSummary, pageConstraints, useStore } from '../state/store';
 import { canExportVideo, encodeVideo, renderAudio } from '../video/encode';
-import { newScene, sceneSeconds, sizeOf, STYLES, subtitles, timelineOf, toVideoScenes, type Animation, type Music, type Quality, type Transition, type VideoFormat, type VideoProject, type VideoScene } from '../video/project';
-import { drawFrame, type Assets } from '../video/render';
+import { moveBox, newScene, resizeBox, sceneSeconds, sizeOf, STYLES, subtitles, timelineOf, toVideoScenes, type Animation, type Box, type BoxName, type Handle, type Music, type Quality, type Transition, type VideoFormat, type VideoProject, type VideoScene } from '../video/project';
+import { drawFrame, sceneBoxes, type Assets } from '../video/render';
 import { bestVoice, sentenceOffsets, sentencePauseMs, speechRate, splitSentences, spokenText } from '../video/speech';
 
 const FORMATS: [VideoFormat, string][] = [['landscape', 'Landscape'], ['portrait', 'Portrait'], ['square', 'Square']];
+const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
 const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
@@ -46,6 +47,9 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
   const [voiceName, setVoiceName] = useState('');
   const [deviceVoices, setDeviceVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [, bump] = useState(0);
+  const [picked, setPicked] = useState<BoxName | null>(null);
+  const [frame, setFrame] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const drag = useRef<{ name: BoxName; handle?: Handle; x: number; y: number; box: Box; before: VideoScene[]; moved: boolean } | null>(null);
 
   const canvas = useRef<HTMLCanvasElement>(null);
   const assets = useRef<Assets>(new Map());
@@ -70,6 +74,49 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
   };
   const patch = (changes: Partial<VideoScene>) => setScenes(project.scenes.map((x) => (x.id === scene.id ? { ...x, ...changes } : x)));
   const goTo = (i: number) => { stop(); setSelected(project.scenes[i].id); setTime(tl.starts[i] + 0.9); };
+
+  /** Shows the scene fully built, so every item is visible while it is being arranged. */
+  const showBuilt = () => { const at = tl.starts[index] + tl.durations[index] * 0.85; if (time < at) setTime(at); };
+  const placeBox = (name: BoxName, box: Box) => setProject((p) => ({ ...p, scenes: p.scenes.map((x) => (x.id === scene.id ? { ...x, layout: { ...x.layout, [name]: box } } : x)) }));
+  const beginDrag = (e: React.PointerEvent<HTMLElement>, name: BoxName, box: Box, handle?: Handle) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setPicked(name);
+    showBuilt();
+    drag.current = { name, handle, x: e.clientX, y: e.clientY, box, before: project.scenes, moved: false };
+  };
+  const dragTo = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d || !frame.width || !frame.height) return;
+    const [dx, dy] = [(e.clientX - d.x) / frame.width, (e.clientY - d.y) / frame.height];
+    d.moved = true;
+    placeBox(d.name, d.handle ? resizeBox(d.box, d.handle, dx, dy) : moveBox(d.box, dx, dy));
+  };
+  const endDrag = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (d?.moved) { setUndo((u) => [...u.slice(-40), d.before]); setRedo([]); }
+  };
+  const nudge = (e: React.KeyboardEvent, name: BoxName, box: Box) => {
+    const step = { ArrowLeft: [-0.01, 0], ArrowRight: [0.01, 0], ArrowUp: [0, -0.01], ArrowDown: [0, 0.01] }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    setPicked(name);
+    showBuilt();
+    patch({ layout: { ...scene.layout, [name]: e.shiftKey ? resizeBox(box, 'se', step[0], step[1]) : moveBox(box, step[0], step[1]) } });
+  };
+
+  useEffect(() => {
+    const el = canvas.current;
+    if (!el?.parentElement) return;
+    const measure = () => setFrame({ left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight });
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    watch.observe(el.parentElement);
+    return () => watch.disconnect();
+  }, [project.format, project.quality]);
 
   useEffect(() => {
     let live = true;
@@ -296,7 +343,21 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
         </aside>
 
         <main className="stage">
-          <div className="stage-view"><canvas ref={canvas} width={size.width} height={size.height} className={project.format} aria-label="Video preview" /></div>
+          <div className="stage-view">
+            <canvas ref={canvas} width={size.width} height={size.height} className={project.format} aria-label="Video preview" />
+            {scene && !playing && exporting === null && (
+              <div className="arrange" style={frame} onPointerDown={() => setPicked(null)} onPointerMove={dragTo} onPointerUp={endDrag} onPointerCancel={endDrag}>
+                {sceneBoxes(project, scene, assets.current).map(({ name, label, box }) => (
+                  <div key={name} role="button" tabIndex={0} aria-label={`${label}. Drag to move. Use arrow keys to move, or Shift and arrow keys to resize.`} aria-pressed={picked === name}
+                    className={`arrange-box ${picked === name ? 'on' : ''}`} style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%` }}
+                    onPointerDown={(e) => beginDrag(e, name, box)} onFocus={() => setPicked(name)} onKeyDown={(e) => nudge(e, name, box)}>
+                    <span className="arrange-tag">{label}</span>
+                    {picked === name && HANDLES.map((h) => <i key={h} className={`arrange-handle ${h}`} data-handle={h} onPointerDown={(e) => beginDrag(e, name, box, h)} />)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="transport">
             <button className="icon-btn" aria-label="Go to beginning" onClick={() => { stop(); setTime(0); }}><SkipBack size={16} /></button>
             <button className="btn primary sm" disabled={!ready} onClick={() => void play()}>{playing ? <><Pause size={14} /> Pause</> : <><Play size={14} /> Play</>}</button>
@@ -326,6 +387,12 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
               <button className={`btn sm ${recording ? 'danger' : ''}`} onClick={() => void record()}>{recording ? <><Square size={13} /> Stop recording</> : <><Mic size={13} /> Record voice</>}</button>
               {voices.current.has(scene.id) && <button className="btn sm" onClick={() => { voices.current.delete(scene.id); bump((n) => n + 1); }}><Trash2 size={13} /> Remove voice</button>}
               <label className="btn sm"><ImagePlus size={13} /> Add image<input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => addImage(e.target.files?.[0])} /></label>
+            </div>
+            <h3 className="side-h">Layout</h3>
+            <p className="hint">Drag an item in the preview to move it. Select it, then drag a corner or edge to resize it.</p>
+            <div className="row-wrap">
+              <button className="btn sm" disabled={!scene.layout} onClick={() => patch({ layout: undefined })}><RotateCcw size={13} /> Reset layout</button>
+              <button className="btn sm" disabled={!scene.layout || project.scenes.length < 2} onClick={() => setScenes(project.scenes.map((x) => ({ ...x, layout: scene.layout })))}><LayoutGrid size={13} /> Use on all scenes</button>
             </div>
           </>}
 

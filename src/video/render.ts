@@ -1,5 +1,5 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
-import { captionsFor, sizeOf, STYLES, TRANSITION_SECONDS, type Timeline, type VideoProject, type VideoScene, type VideoStyle } from './project';
+import { captionsFor, sizeOf, STYLES, TRANSITION_SECONDS, type Box, type BoxName, type Timeline, type VideoProject, type VideoScene, type VideoStyle } from './project';
 
 /** Draws any moment of the video. The same code powers the preview and the exported file. */
 
@@ -56,9 +56,7 @@ function background(c: Ctx, W: number, H: number, st: VideoStyle, scene: VideoSc
   c.restore();
 }
 
-function presenter(c: Ctx, W: number, H: number, s: number, st: VideoStyle, t: number, speaking: boolean, raised: number) {
-  const r = 62 * s;
-  const [x, y] = [W - r - 30 * s, H - r - raised - 22 * s];
+function presenter(c: Ctx, x: number, y: number, r: number, s: number, st: VideoStyle, t: number, speaking: boolean) {
   c.save();
   c.beginPath(); c.arc(x, y, r + 4 * s, 0, Math.PI * 2); c.fillStyle = st.accent; c.fill();
   c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fillStyle = '#eaf1fb'; c.fill(); c.clip();
@@ -123,6 +121,66 @@ function bulletsAt(c: Ctx, items: string[], st: VideoStyle, x: number, y: number
   });
 }
 
+/** The largest text size at which every key point fits inside a box the person has sized. */
+function fittedSize(c: Ctx, items: string[], w: number, h: number, s: number) {
+  for (let size = 40; size > 12; size--) {
+    c.font = `500 ${size * s}px ${FONT}`;
+    let used = 0;
+    let cut = false;
+    items.forEach((b) => {
+      const lines = wrap(c, b, w - 56 * s, 3);
+      cut = cut || lines.some((l) => l.endsWith('…'));
+      used += lines.length * (size + 7) * s + 44 * s;
+    });
+    if (!cut && used <= h) return size;
+  }
+  return 12;
+}
+
+const mediaOf = (scene: VideoScene, assets: Assets) => (scene.visualId ? assets.get(scene.visualId) : assets.get(scene.id));
+
+/** Where each item sits before the person moves anything. */
+function autoBoxes(c: Ctx, project: VideoProject, scene: VideoScene, hasMedia: boolean): Partial<Record<BoxName, Box>> {
+  const { width: W, height: H } = sizeOf(project);
+  const s = Math.min(W, H) / 720;
+  const vertical = project.format !== 'landscape';
+  const m = 52 * s;
+  const capH = project.captions ? (vertical ? 170 : 104) * s : 30 * s;
+  const share = (x: number, y: number, w: number, h: number): Box => ({ x: x / W, y: y / H, w: w / W, h: h / H });
+  const r = 66 * s;
+  const raised = project.captions ? capH - 10 * s : 0;
+  const out: Partial<Record<BoxName, Box>> = { presenter: share(W - 2 * r - 26 * s, H - 2 * r - raised - 18 * s, 2 * r, 2 * r) };
+  if (scene.kind === 'title' || scene.kind === 'closing') return out;
+  const titleSize = (vertical ? 36 : 39) * s;
+  c.font = `700 ${titleSize}px ${FONT}`;
+  const y = m * 0.8 + 31 * s + wrap(c, scene.title, W - 2 * m, 2).length * titleSize * 1.14 + 18 * s;
+  const bottom = H - capH - 18 * s;
+  if (scene.kind === 'kpis') out.media = share(m, y + 18 * s, W - 2 * m, H - y - capH - 48 * s);
+  else if (hasMedia && !vertical) {
+    const cw = (W - 2 * m) * 0.64;
+    out.media = share(m, y + 4 * s, cw, bottom - y - 8 * s);
+    out.points = share(m + cw + 28 * s, y + 12 * s, W - 2 * m - cw - 28 * s, bottom - y - 12 * s);
+  } else if (hasMedia) {
+    const ch = (bottom - y) * 0.52;
+    out.media = share(m, y + 4 * s, W - 2 * m, ch);
+    out.points = share(m, y + ch + 26 * s, W - 2 * m, bottom - y - ch - 26 * s);
+  } else out.points = share(m, y + 16 * s, W - 2 * m, bottom - y - 16 * s);
+  return out;
+}
+
+let measuring: Ctx | null = null;
+
+/** The items a person can move on this scene, with their current positions. */
+export function sceneBoxes(project: VideoProject, scene: VideoScene, assets: Assets): { name: BoxName; label: string; box: Box }[] {
+  measuring ??= document.createElement('canvas').getContext('2d')!;
+  const auto = autoBoxes(measuring, project, scene, Boolean(mediaOf(scene, assets)));
+  const labels: Record<BoxName, string> = { media: scene.kind === 'kpis' ? 'Key figures' : 'Chart or image', points: 'Key points', presenter: 'Presenter' };
+  return (['media', 'points', 'presenter'] as BoxName[]).flatMap((name) => {
+    const box = scene.layout?.[name] ?? auto[name];
+    return box && (name !== 'presenter' || project.presenter) ? [{ name, label: labels[name], box }] : [];
+  });
+}
+
 function chartCard(c: Ctx, img: Assets extends Map<string, infer V> ? V : never, scene: VideoScene, x: number, y: number, w: number, h: number, s: number, t: number, seconds: number) {
   const fit = Math.min(w / img.width, h / img.height);
   const [iw, ih] = [img.width * fit, img.height * fit];
@@ -157,7 +215,6 @@ export function drawScene(c: Ctx, project: VideoProject, scene: VideoScene, t: n
   c.textAlign = 'left';
   const enter = ease(t / 0.7);
   const hero = scene.kind === 'title' || scene.kind === 'closing';
-  const capH = project.captions ? (vertical ? 170 : 104) * s : 30 * s;
 
   c.save();
   c.globalAlpha = enter;
@@ -179,23 +236,25 @@ export function drawScene(c: Ctx, project: VideoProject, scene: VideoScene, t: n
     text(c, wrap(c, scene.bullets[0] ?? '', W - 2 * m, 4), m, y + 10 * s, 37 * s);
     c.fillStyle = st.accent; c.fillRect(m, y - 2 * s, 120 * s * p, 5 * s);
     c.restore();
-  } else if (scene.kind === 'kpis') {
-    kpiCards(c, scene, st, m, y + 18 * s, W - 2 * m, H - y - capH - 48 * s, s, t, vertical);
-  } else {
-    const img = scene.visualId ? assets.get(scene.visualId) : assets.get(scene.id);
-    const bottom = H - capH - 18 * s;
-    if (img && !vertical) {
-      const cw = (W - 2 * m) * 0.64;
-      chartCard(c, img, scene, m, y + 4 * s, cw, bottom - y - 8 * s, s, t, seconds);
-      bulletsAt(c, scene.bullets, st, m + cw + 28 * s, y + 12 * s, W - 2 * m - cw - 28 * s, s, t, seconds, 21);
-    } else if (img) {
-      const ch = (bottom - y) * 0.52;
-      chartCard(c, img, scene, m, y + 4 * s, W - 2 * m, ch, s, t, seconds);
-      bulletsAt(c, scene.bullets, st, m, y + ch + 26 * s, W - 2 * m, s, t, seconds, 24);
-    } else bulletsAt(c, scene.bullets, st, m, y + 16 * s, W - 2 * m, s, t, seconds, 28);
   }
 
-  if (project.presenter) presenter(c, W, H, s, st, t, t > 0.3 && t < seconds - 0.4, project.captions ? capH - 10 * s : 0);
+  const img = mediaOf(scene, assets);
+  const auto = autoBoxes(c, project, scene, Boolean(img));
+  const place = (name: BoxName) => {
+    const b = scene.layout?.[name] ?? auto[name];
+    return b ? { x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H } : null;
+  };
+  const media = place('media');
+  const points = place('points');
+  if (media && scene.kind === 'kpis') kpiCards(c, scene, st, media.x, media.y, media.w, media.h, s, t, vertical || media.w < (scene.kpis?.length ?? 1) * 190 * s);
+  else if (media && img) chartCard(c, img, scene, media.x, media.y, media.w, media.h, s, t, seconds);
+  if (points) {
+    const size = scene.layout?.points ? fittedSize(c, scene.bullets, points.w, points.h, s) : !img ? 28 : vertical ? 24 : 21;
+    bulletsAt(c, scene.bullets, st, points.x, points.y, points.w, s, t, seconds, size);
+  }
+
+  const face = project.presenter ? place('presenter') : null;
+  if (face) presenter(c, face.x + face.w / 2, face.y + face.h / 2, Math.max(8 * s, Math.min(face.w, face.h) / 2 - 4 * s), s, st, t, t > 0.3 && t < seconds - 0.4);
 
   if (project.captions) {
     const cap = captionsFor(scene.narration, seconds).find((x) => t >= x.start && t < x.end);
