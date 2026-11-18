@@ -8,7 +8,7 @@ import { inferTable } from '../src/core/parse';
 import { applyRecipe } from '../src/core/recipe';
 import { buildStory } from '../src/core/story';
 import { readCsv } from '../src/ingest/readers';
-import { bestVoice, sentenceOffsets, speechRate, splitSentences, spokenText } from '../src/video/speech';
+import { bestVoice, sentenceOffsets, sentencePauseMs, speechRate, splitSentences, spokenText } from '../src/video/speech';
 
 describe('spoken figures', () => {
   it.each([
@@ -46,8 +46,14 @@ describe('sentence timing', () => {
     expect(at[2]).toBeLessThanOrEqual(10);
   });
   it('uses a measured speaking speed', () => {
-    expect(speechRate(2.4)).toBeCloseTo(0.923, 3);
+    expect(speechRate(2.4)).toBe(1);
     expect(speechRate(9)).toBe(1.25);
+    expect(speechRate(1)).toBe(0.8);
+  });
+  it('pauses between sentences like the measured narration', () => {
+    expect(sentencePauseMs(2.4)).toBe(570);
+    expect(sentencePauseMs(3.2)).toBeLessThan(570);
+    expect(sentencePauseMs(1.8)).toBeGreaterThan(570);
   });
   it('prefers a clear English voice', () => {
     expect(bestVoice([{ name: 'Basic', lang: 'en-GB' }, { name: 'Microsoft Zira', lang: 'en-US' }])).toBe('Microsoft Zira');

@@ -9,7 +9,7 @@ import { filterSummary, pageConstraints, useStore } from '../state/store';
 import { canExportVideo, encodeVideo, renderAudio } from '../video/encode';
 import { newScene, sceneSeconds, sizeOf, STYLES, subtitles, timelineOf, toVideoScenes, type Animation, type Music, type Quality, type Transition, type VideoFormat, type VideoProject, type VideoScene } from '../video/project';
 import { drawFrame, type Assets } from '../video/render';
-import { bestVoice, sentenceOffsets, speechRate, splitSentences, spokenText } from '../video/speech';
+import { bestVoice, sentenceOffsets, sentencePauseMs, speechRate, splitSentences, spokenText } from '../video/speech';
 
 const FORMATS: [VideoFormat, string][] = [['landscape', 'Landscape'], ['portrait', 'Portrait'], ['square', 'Square']];
 
@@ -140,7 +140,7 @@ export default function VideoStudio({ onClose }: { onClose: () => void }) {
       u.voice = voice;
       if (voice) u.lang = voice.lang;
       u.rate = speechRate(project.pace);
-      u.onend = () => { if (run === speechRun.current) window.setTimeout(() => say(k + 1), 180); };
+      u.onend = () => { if (run === speechRun.current) window.setTimeout(() => say(k + 1), sentencePauseMs(project.pace)); };
       u.onerror = (e) => { if (e.error !== 'canceled' && e.error !== 'interrupted') say(k + 1); };
       utterance.current = u; // Browsers can lose the end event if nothing holds on to the sentence.
       speechSynthesis.speak(u);

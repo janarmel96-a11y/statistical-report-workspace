@@ -56,8 +56,16 @@ export function sentenceOffsets(sentences: string[], seconds: number): number[] 
   return out;
 }
 
-/** A measured, presenter-like speed. */
-export const speechRate = (pace: number) => Math.max(0.8, Math.min(1.25, pace / 2.6));
+/** Measured from a 20-scene professional narration: 2.44 spoken words per second, pauses included. */
+export const NATURAL_PACE = 2.4;
+/** Typical silence between sentences in that narration. */
+export const SENTENCE_PAUSE_SECONDS = 0.57;
+
+/** The default pace uses the voice's natural speed, and the pace control moves it from there. */
+export const speechRate = (pace: number) => Math.max(0.8, Math.min(1.25, pace / NATURAL_PACE));
+
+/** Some device voices change speed only in large steps, so pauses also follow the pace control. */
+export const sentencePauseMs = (pace: number) => Math.round((SENTENCE_PAUSE_SECONDS * 1000 * NATURAL_PACE) / Math.max(0.1, pace));
 
 /** Chooses the clearest English voice installed on this device. */
 export function bestVoice(voices: { name: string; lang: string }[]): string {
