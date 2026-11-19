@@ -1,6 +1,6 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { ArrowRight, BarChart3, ClipboardList, Combine, FileSpreadsheet, FileUp, ListChecks, Pencil, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, BarChart3, FileSpreadsheet, FileUp, ListChecks, Pencil, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { ACCEPT } from '../ingest';
 import { deleteProject, listProjects, loadProject, renameSavedProject, type ProjectSummary } from '../state/persist';
 import { useStore } from '../state/store';
@@ -8,8 +8,6 @@ import { Logo, ThemeSwitch } from './common';
 import { NameInput } from './NameInput';
 import { PrivacyDialog } from './PrivacyDialog';
 
-const CombineDialog = lazy(() => import('./CombineDialog'));
-const MswdDialog = lazy(() => import('./MswdDialog'));
 
 const SAMPLES = [
   { file: 'retail-sales.csv', name: 'Retail sales', meta: '3 years · 1,500 orders', note: 'Includes planted calculation errors, so you can watch them get fixed.' },
@@ -32,8 +30,6 @@ export function Home() {
   const setAutoMode = useStore((s) => s.setAutoMode);
   const [drag, setDrag] = useState(false);
   const [privacy, setPrivacy] = useState(false);
-  const [combining, setCombining] = useState(false);
-  const [mswd, setMswd] = useState(false);
   const [recent, setRecent] = useState<ProjectSummary[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -73,6 +69,7 @@ export function Home() {
             <span className="drop-icon"><Upload size={26} /></span>
             <h2>Drop your file here</h2>
             <p>Excel (.xlsx, .xls), CSV, JSON, or PDF, up to 200 MB</p>
+            <p className="drop-auto">Files with the same headers are combined. MSWD patient responses open the MSWD performance report.</p>
             <button className="btn primary lg" onClick={() => input.current?.click()}>Choose a file</button>
             <input ref={input} type="file" accept={ACCEPT} multiple hidden aria-label="Choose data files" onChange={(e) => { onFiles(e.target.files); e.target.value = ''; }} />
             <div className="auto-mode">
@@ -92,18 +89,6 @@ export function Home() {
                 <ArrowRight size={18} />
               </button>
             ))}
-          </div>
-
-          <div className="combine-card mswd-card">
-            <span className="drop-icon"><ClipboardList size={22} /></span>
-            <span><h2>MSWD performance report</h2><p>Turn the NEW and OLD patient responses into the MSWD performance workbook: patients catered per RSW and month, dashboard, data checks, and worker report.</p></span>
-            <button className="btn primary" onClick={() => setMswd(true)}>Create MSWD report <ArrowRight size={15} /></button>
-          </div>
-
-          <div className="combine-card">
-            <span className="drop-icon"><Combine size={22} /></span>
-            <span><h2>Combine files</h2><p>Stack two or more files with the same headers into one clean file.</p></span>
-            <button className="btn" onClick={() => setCombining(true)}>Combine files <ArrowRight size={15} /></button>
           </div>
 
           {recent.length > 0 && (
@@ -139,8 +124,6 @@ export function Home() {
           <p className="credit">Created by Jan Armel Java Ajeno</p>
         </footer>
       </main>
-      {combining && <Suspense fallback={null}><CombineDialog onClose={() => setCombining(false)} /></Suspense>}
-      {mswd && <Suspense fallback={null}><MswdDialog onClose={() => setMswd(false)} /></Suspense>}
       {privacy && <PrivacyDialog onClose={() => setPrivacy(false)} onDeleted={() => setRecent([])} />}
     </div>
   );

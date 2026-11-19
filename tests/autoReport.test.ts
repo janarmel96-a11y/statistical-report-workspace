@@ -41,6 +41,14 @@ describe('automatic table choice', () => {
     expect(pick.tables.map((t) => t.name)).toEqual(['MASTER DATA']);
     expect(pick.repeated).toEqual(['JANUARY (already inside MASTER DATA)', 'FEBRUARY (already inside MASTER DATA)']);
   });
+  it('combines only files with the same header content', () => {
+    const newForm = table('NEW PATIENT', ['Timestamp', 'Worker', 'Barangay', 'Age', 'Sex', 'Gender', 'Household Size', 'Type', 'Ward', 'Service'], 40);
+    const oldForm = table('OLD PATIENT', ['Service', 'Type', 'Timestamp', 'Worker', 'Barangay', 'Age', 'Sex'], 60);
+    expect(chooseTables([newForm, oldForm]).tables.map((t) => t.name)).toEqual(['NEW PATIENT', 'OLD PATIENT']);
+    // Sharing 2 of 3 columns is not the same header content, so the files are not combined.
+    const other = table('Budget', ['Timestamp', 'Worker', 'Amount'], 30);
+    expect(chooseTables([oldForm, other]).tables.map((t) => t.name)).toEqual(['OLD PATIENT']);
+  });
   it('prefers a clearly read table over a slightly larger unreliable one', () => {
     const pick = chooseTables([table('Blurry', ['A', 'B'], 20, 0.4), table('Clear', ['C', 'D'], 15, 0.98)]);
     expect(pick.tables[0].name).toBe('Clear');

@@ -8,6 +8,7 @@ import { UnlockDialog } from './ui/UnlockDialog';
 
 const Prepare = lazy(() => import('./ui/Prepare').then((m) => ({ default: m.Prepare })));
 const Report = lazy(() => import('./ui/Report').then((m) => ({ default: m.Report })));
+const MswdDialog = lazy(() => import('./ui/MswdDialog'));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -30,6 +31,8 @@ export function App() {
   const hasReport = useStore((s) => Boolean(s.report && s.engine));
   const pending = useStore((s) => Boolean(s.pending));
   const locked = useStore((s) => Boolean(s.locked));
+  const mswdUpload = useStore((s) => s.mswdUpload);
+  const closeMswd = useStore((s) => s.closeMswd);
   const dark = useDarkMode();
 
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
@@ -53,6 +56,7 @@ export function App() {
         {route === 'report' && hasReport ? <Report /> : route === 'prepare' && hasTable ? <Prepare /> : <Home />}
       </Suspense>
       {pending && <ImportDialog />}
+      {mswdUpload && <Suspense fallback={null}><MswdDialog initial={mswdUpload} onClose={closeMswd} /></Suspense>}
       {locked && <UnlockDialog />}
       <BusyOverlay />
       <Toasts />

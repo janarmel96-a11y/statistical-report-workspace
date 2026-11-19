@@ -109,6 +109,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .drop-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; background: var(--accent-soft); color: var(--accent); margin-bottom: 6px; }
 .drop h2 { font-size: 21px; letter-spacing: -.01em; }
 .drop p { color: var(--ink-2); margin-bottom: 12px; }
+.drop p.drop-auto { max-width: 430px; margin: -6px 0 12px; font-size: 12.5px; }
 .auto-mode { display: grid; justify-items: center; gap: 3px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); width: min(420px, 100%); }
 .auto-mode .switch { font-size: 14px; position: relative; }
 .auto-mode small { color: var(--ink-2); font-size: 12.5px; }
@@ -146,25 +147,9 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .privacy-limits { display: grid; gap: 5px; font-size: 13px; }
 .privacy-limits ul { list-style: disc; padding-left: 18px; color: var(--ink-2); display: grid; gap: 3px; }
 
-.combine-card { grid-column: span 12; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
-.combine-card .drop-icon { margin: 0; width: 44px; height: 44px; border-radius: 12px; flex: none; }
-.combine-card > span:nth-child(2) { flex: 1; min-width: 220px; }
-.combine-card h2 { font-size: 15px; }
-.combine-card p { color: var(--ink-2); font-size: 13px; }
 .combine-drop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 14px; border: 1.5px dashed var(--line-2); border-radius: 12px; }
 .combine-drop.over { border-color: var(--accent); background: var(--accent-soft); }
 .combine-drop p { color: var(--ink-2); font-size: 13px; }
-.combine-files { display: grid; gap: 6px; }
-.combine-files li { display: flex; align-items: center; gap: 9px; padding: 7px 8px 7px 11px; border-radius: 9px; background: var(--surface-2); }
-.combine-files svg:first-child { color: var(--accent); flex: none; }
-.combine-files span { flex: 1; min-width: 0; display: grid; }
-.combine-files b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
-.combine-files small { color: var(--ink-2); }
-.combine-files select { max-width: 180px; }
-.combine-sheets summary { cursor: pointer; color: var(--accent); font-size: 12.5px; width: fit-content; }
-.combine-sheets > div { display: grid; gap: 3px; max-height: 180px; overflow: auto; padding: 6px 2px 2px; }
-.combine-sheets label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-.combine-sheets label small { color: var(--ink-2); }
 .combine-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; }
 .mswd-sources { display: grid; gap: 6px; }
 .mswd-sources h3, .mswd-block h3, .mswd-checks h3 { font-size: 13.5px; }
@@ -216,19 +201,10 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .mswd-fixes label { display: flex; gap: 6px; align-items: center; }
 .mswd-fixes small { color: var(--ink-2); }
 .mswd-columns { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 12px; }
-.mswd-card { border-color: var(--accent); }
 @media (max-width: 640px) { .combine-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .combine-stats div { padding: 9px 12px; border-radius: 10px; background: var(--surface-2); }
 .combine-stats dt { color: var(--ink-2); font-size: 12px; }
 .combine-stats dd { margin: 0; font-size: 21px; font-weight: 700; }
-.combine-review { display: grid; gap: 5px; }
-.combine-review h3 { display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
-.combine-review h3 svg { color: var(--warn); }
-.combine-review ul { display: grid; gap: 4px; max-height: 210px; overflow: auto; }
-.combine-review li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 6px 9px; border-radius: 8px; background: var(--surface-2); font-size: 13px; }
-.combine-review li > span { flex: 1; min-width: 200px; display: grid; }
-.combine-review small { color: var(--ink-2); font-size: 12px; }
-.combine-review select { max-width: 280px; font-size: 12.5px; padding: 3px 6px; }
 .combine-options { display: grid; gap: 8px; justify-items: start; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin: 0; }
 .combine-options legend { font-weight: 600; padding: 0 4px; font-size: 13px; }
 .combine-options .switch { position: relative; }
@@ -248,11 +224,9 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .mini-table table { border-collapse: collapse; font-size: 12.5px; }
 .mini-table th, .mini-table td { padding: 5px 9px; border-bottom: 1px solid var(--line); white-space: nowrap; text-align: left; }
 .mini-table th { position: sticky; top: 0; background: var(--surface-2); }
-.combine, .scope { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0; display: grid; gap: 6px; }
-.combine legend, .scope legend { font-weight: 600; padding: 0 4px; }
-.combine label { display: flex; gap: 8px; }
+.scope { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0; display: grid; gap: 6px; }
+.scope legend { font-weight: 600; padding: 0 4px; }
 .scope { display: flex; gap: 16px; }
-.join-keys { display: flex; gap: 12px; flex-wrap: wrap; padding-left: 22px; }
 
 /* Top bar */
 .topbar { display: flex; align-items: center; gap: 6px; min-height: 56px; padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -361,7 +335,6 @@ input.name-plain:hover, input.name-plain:focus { border-color: var(--line-2); ba
 .table-pick > input { margin-top: 7px; flex: none; }
 .table-pick > span { flex: 1; }
 .table-pick small, .combine-files small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.report-name { display: grid; gap: 4px; margin-top: 12px; font-weight: 600; font-size: 13px; }
 .recent-rename { flex: 1; min-width: 0; padding: 4px; }
 
 /* Report designs */

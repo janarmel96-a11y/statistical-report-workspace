@@ -39,6 +39,21 @@ export function chooseSources(list: SourceTable[]): SourceChoice[] {
   return out;
 }
 
+/**
+ * True when the upload is MSWD patient data: a Medical Social Worker column, a month or date, a type of patient
+ * or classification, and a new or old patient status. Such files go to the MSWD performance report.
+ */
+export function isMswdUpload(tables: RawTable[]): boolean {
+  const list = tables.map((t) => ({ label: t.name, table: t }));
+  const choice = chooseSources(list);
+  return list.some((s, i) => {
+    if (!choice[i].use) return false;
+    const c = detectColumns(headersOf(s.table));
+    return c.worker !== undefined && (c.month ?? c.timestamp ?? c.date) !== undefined
+      && (c.typeOfPatient !== undefined || c.classification !== undefined) && (c.patientStatus !== undefined || c.patientType !== undefined);
+  });
+}
+
 /** Stacks the chosen tables, lining their columns up by header. */
 export function stackSources(list: SourceTable[], use: boolean[]): { headers: string[]; rows: RawCell[][]; similar: string[][] } {
   const chosen = list.filter((_, i) => use[i]).map(asSource);

@@ -29,12 +29,13 @@ export function chooseTables(found: RawTable[]): AutoPick {
     const size = list.reduce((s, t) => s + sizeOf(t), 0);
     if (size > bestSize) { shaped = list; bestSize = size; }
   });
-  // Files that share most of their columns are the same kind of data, even if a few headers differ.
+  // Files with the same header content are the same kind of data, even if their columns are in another order
+  // or one form has a few extra questions. Files with different headers are never combined.
   const anchor = shaped[0];
   const related = (t: RawTable) => {
     if (shaped.includes(t)) return true;
     const both = matchColumns([{ name: 'a', headers: anchor.headers, rows: [] }, { name: 'b', headers: t.headers, rows: [] }]).filter((c) => c.map.every((p) => p !== null)).length;
-    return both / Math.min(anchor.headers.length, t.headers.length) >= 0.6;
+    return both / Math.min(anchor.headers.length, t.headers.length) >= 0.9;
   };
   const candidates = found.filter(related);
   // A master sheet next to its monthly sheets, or the same file twice, would count every row twice.

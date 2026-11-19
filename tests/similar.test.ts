@@ -5,7 +5,8 @@ import { applyRecipe } from '../src/core/recipe';
 import { listFixes, planCleanup, FULL_CLEANUP, variantKey } from '../src/core/cleanup';
 import { codeFor, computeReport, detectColumns, planEntryCleanup, prepare, workerNames } from '../src/core/mswd';
 import { isSimilarEntry } from '../src/core/typos';
-import type { RawCell } from '../src/core/types';
+import { isMswdUpload } from '../src/core/mswdSources';
+import type { RawCell, RawTable } from '../src/core/types';
 
 const key = (s: string) => variantKey(s);
 
@@ -74,6 +75,18 @@ describe('similar spellings in the main workspace', () => {
     const town = applyRecipe(table, findings.filter((x) => x.auto).flatMap((x) => x.steps)).columns.find((c) => c.name === 'Town')!;
     expect(town.values.filter((v) => v === 'BAROTAC NUEVO')).toHaveLength(102);
     expect(town.values.filter((v) => v === 'DUMANGAS')).toHaveLength(38);
+  });
+});
+
+describe('recognizing MSWD uploads', () => {
+  const t = (headers: string[], name = 'Form Responses 1'): RawTable => ({ name, source: `${name}.xlsx`, headers, rows: [headers.map(() => 'x')] });
+  it('sends the NEW and OLD patient responses to the MSWD report', () => {
+    expect(isMswdUpload([t(['Timestamp', 'Patient Status', 'Medical Social Worker', 'Type of Patient', 'Classification'])])).toBe(true);
+    expect(isMswdUpload([t(['Month', 'Patient Type', 'Medical Social Worker', 'Classification'], 'MASTER DATA'), t(['Date', 'Medical Social Worker'], 'DASHBOARD DATA')])).toBe(true);
+  });
+  it('leaves other files with a social worker column to the normal report', () => {
+    expect(isMswdUpload([t(['Date', 'Medical Social Worker', 'Patients Catered'])])).toBe(false);
+    expect(isMswdUpload([t(['Region', 'Sales', 'Units'])])).toBe(false);
   });
 });
 

@@ -9,8 +9,8 @@ import { generateInsights, newId, newReport, recommendTemplates } from '../core/
 import { inferTable, type InferredColumn } from '../core/parse';
 import { appendTables, applyRecipe, diffSchema, joinTables, reusableSteps, type SchemaDiff } from '../core/recipe';
 import { keyLabel, type Bookmark, type Page, type ReportDoc, type Selection, type Slicer, type Visual } from '../core/report';
-import { DEFAULT_LOCALE, type Constraint, type DataTable, type Finding, type LocaleOptions, type RawTable, type Step } from '../core/types';
-import { readFile } from '../ingest';
+import { DEFAULT_LOCALE, type Constraint, type DataTable, type Finding, type LocaleOptions, type RawCell, type RawTable, type Step } from '../core/types';
+import { readFile, readFileWithGrids } from '../ingest';
 import type { AccessRole } from '../export/protectedFile';
 import { deleteAllProjects, saveProject, type CombineConfig, type ProjectRecord } from './persist';
 
@@ -32,6 +32,8 @@ interface State {
   busy: { message: string; fraction?: number } | null;
   toasts: Toast[];
   pending: RawTable[] | null;
+  /** MSWD patient data from the drop zone, waiting in the MSWD performance report. */
+  mswdUpload: { tables: RawTable[]; grid?: RawCell[][] } | null;
 
   projectId: string | null;
   projectName: string;
@@ -75,6 +77,7 @@ interface State {
   importFiles(files: File[]): Promise<void>;
   loadSample(url: string, name: string): Promise<void>;
   cancelImport(): void;
+  closeMswd(): void;
   confirmImport(tables: RawTable[], combine: CombineConfig, name?: string): void;
   renameProject(name: string): void;
   openRecord(p: ProjectRecord): void;
@@ -196,7 +199,7 @@ export const useStore = create<State>((set, get) => {
     autoMode: readPref<string>('srw-auto', 'off') === 'on',
     privateMode: readPref<string>('srw-private', 'off') === 'on',
     accessRole: null, locked: null,
-    busy: null, toasts: [], pending: null,
+    busy: null, toasts: [], pending: null, mswdUpload: null,
     projectId: null, projectName: '', raws: [], combine: { mode: 'single' }, locale: DEFAULT_LOCALE,
     base: null, inferred: [], findings: [], quality: null, disabled: [], steps: [], redoSteps: [], table: null,
     engine: null, report: null, pageId: null, selectedVisual: null, selectedElement: null, slicers: [], selection: null, interaction: 'filter',
@@ -231,6 +234,7 @@ export const useStore = create<State>((set, get) => {
 
     importFiles: async (files) => {
       const found: RawTable[] = [];
+      let grid: RawCell[][] | undefined;
       for (const f of files) {
         try {
           set({ busy: { message: `Reading ${f.name}` } });
@@ -242,15 +246,28 @@ export const useStore = create<State>((set, get) => {
             get().openRecord({ id: newId('r'), name: p.report.title, updatedAt: Date.now(), rowCount: 0, columnCount: 0, raws: p.raws, combine: p.combine ?? { mode: 'single' }, locale: p.locale ?? DEFAULT_LOCALE, steps: p.steps ?? [], disabledFindings: p.disabledFindings ?? [], report: p.report });
             return;
           }
-          found.push(...await readFile(f, (message, fraction) => set({ busy: { message, fraction } })));
+          const read = await readFileWithGrids(f, (message, fraction) => set({ busy: { message, fraction } }), (name) => /^\s*MSWD PERFORMANCE\s*$/i.test(name));
+          found.push(...read.tables);
+          grid ??= [...read.grids.values()][0];
         } catch (e) {
           get().toast('error', (e as Error).message);
         }
       }
-      if (found.length && get().autoMode) { await autoGenerate(found); return; }
+      if (!found.length) { set({ busy: null }); return; }
+      // MSWD patient responses or an MSWD workbook open the MSWD performance report, with the files already in it.
+      const { isMswdUpload } = await import('../core/mswdSources');
+      if (isMswdUpload(found)) { set({ busy: null, mswdUpload: { tables: found, grid } }); return; }
+      if (get().autoMode) { await autoGenerate(found); return; }
       set({ busy: null });
-      if (!found.length) return;
       if (found.length === 1 && !found[0].confidence) { get().confirmImport(found, { mode: 'single' }); return; }
+      // Files or sheets with the same header content are combined automatically. Different headers are never combined.
+      const pick = chooseTables(found);
+      if (pick.tables.length > 1) {
+        const labels = tableLabels(pick.tables);
+        get().confirmImport(pick.tables, { mode: 'append' }, 'Combined files');
+        get().toast('success', `Combined ${labels.length} tables with the same headers: ${labels.join(', ')}.${pick.repeated.length ? ` Left out so no row is counted twice: ${pick.repeated.join('; ')}.` : ''}`);
+        return;
+      }
       set({ pending: found });
     },
     loadSample: async (url, name) => {
@@ -265,6 +282,7 @@ export const useStore = create<State>((set, get) => {
       set({ busy: null });
     },
     cancelImport: () => set({ pending: null }),
+    closeMswd: () => set({ mswdUpload: null }),
     confirmImport: (tables, combine, name) => {
       startProject(tables, combine, name ? { name } : {});
       get().setRoute('prepare');

@@ -42,9 +42,15 @@ function CheckIcon({ level }: { level: MswdCheck['level'] }) {
   return <Info size={15} className="info" />;
 }
 
-export default function MswdDialog({ onClose }: { onClose: () => void }) {
+/** `initial` holds the files dropped on the home page, so the report is ready when the dialog opens. */
+export default function MswdDialog({ onClose, initial }: { onClose: () => void; initial?: { tables: RawTable[]; grid?: RawCell[][] } }) {
   const confirmImport = useStore((s) => s.confirmImport);
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<Item[]>(() => {
+    if (!initial) return [];
+    const byFile = new Map<string, RawTable[]>();
+    for (const t of initial.tables) byFile.set(t.source, [...(byFile.get(t.source) ?? []), t]);
+    return [...byFile].map(([fileName, tables], i) => ({ key: `upload:${i}:${fileName}`, fileName, tables, grid: i === 0 ? initial.grid : undefined }));
+  });
   const [useOverride, setUseOverride] = useState<Record<string, boolean>>({});
   const [colOverride, setColOverride] = useState<MswdColumns>({});
   const [skip, setSkip] = useState<Set<string>>(new Set());
