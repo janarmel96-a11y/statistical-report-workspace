@@ -51,6 +51,7 @@ export default function MswdDialog({ onClose }: { onClose: () => void }) {
   const [merges, setMerges] = useState<Map<string, string>>(new Map());
   const [department, setDepartment] = useState('MALASAKIT CENTER');
   const [monthSheets, setMonthSheets] = useState(true);
+  const [trim, setTrim] = useState(true);
   const [block, setBlock] = useState(-1);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,10 +80,12 @@ export default function MswdDialog({ onClose }: { onClose: () => void }) {
   const plan = useMemo(() => (cols.worker === undefined ? autoPlan : withMerges(autoPlan, stacked.headers, stacked.rows, cols.worker, merges)), [autoPlan, stacked, cols.worker, merges]);
   const result = useMemo(() => {
     if (!stacked.rows.length || missing.length) return null;
-    const p = prepare(stacked.headers, stacked.rows, cols, plan, skip);
+    // With Auto trim and correct off, every entry stays exactly as typed, the counted columns included.
+    const off = trim ? skip : new Set(plan.flatMap((c) => c.fixes.map((f) => `${c.col}\u0001${f.from}`)));
+    const p = prepare(stacked.headers, stacked.rows, cols, plan, off, { trim });
     const report = computeReport(p, workerNames(p));
     return { p, report, checks: checkReport(p, report) };
-  }, [stacked, cols, plan, skip, missing.length]);
+  }, [stacked, cols, plan, skip, missing.length, trim]);
   const grid = items.find((it) => it.grid)?.grid;
   // The report sheet already in the file is compared with the data as it was entered, so its own formulas are judged.
   const comparison = useMemo(() => {
@@ -134,7 +137,7 @@ export default function MswdDialog({ onClose }: { onClose: () => void }) {
 
   const report = result?.report;
   const shown = report ? report.blocks[block < 0 ? report.blocks.length - 1 : block] : null;
-  const fixCount = plan.reduce((s, p) => s + p.fixes.filter((f) => !skip.has(`${p.col}\u0001${f.from}`)).reduce((t, f) => t + f.count, 0), 0);
+  const fixCount = trim ? plan.reduce((s, p) => s + p.fixes.filter((f) => !skip.has(`${p.col}\u0001${f.from}`)).reduce((t, f) => t + f.count, 0), 0) : 0;
   const unused = list.map((s, i) => ({ s, i })).filter(({ i }) => !use[i] && auto[i].reason === 'No Medical Social Worker column' && useOverride[list[i].key] === undefined);
   const listed = list.map((s, i) => ({ s, i })).filter((x) => !unused.includes(x));
   const toggleFix = (key: string) => setSkip((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
@@ -179,8 +182,14 @@ export default function MswdDialog({ onClose }: { onClose: () => void }) {
           <div><dt>Patients catered</dt><dd>{n(report.blocks[report.blocks.length - 1].total.total)}</dd></div>
           <div><dt>RSWs</dt><dd>{report.workers.length}</dd></div>
           <div><dt>Months</dt><dd>{report.months.length}</dd></div>
-          <div><dt>Entries corrected</dt><dd>{n(fixCount)}</dd></div>
+          <div><dt>Entries corrected</dt><dd>{n(fixCount + result.p.trimmed)}</dd></div>
         </dl>
+        <section className="mswd-autofix">
+          <label className="switch"><input type="checkbox" checked={trim} onChange={(e) => setTrim(e.target.checked)} /><i /><span>Auto trim and correct</span></label>
+          <small>{trim
+            ? `Trimmed extra spaces in ${n(result.p.trimmed)} ${result.p.trimmed === 1 ? 'cell' : 'cells'} (names, numbers, addresses, notes) and corrected ${n(fixCount)} ${fixCount === 1 ? 'entry' : 'entries'} in the counted columns. Letters in names and numbers are never changed.`
+            : 'Every entry is kept exactly as typed. An entry with a stray space, such as "OP ", is then left out of its column group, as Excel\'s COUNTIFS would do. The checks below list those rows.'}</small>
+        </section>
 
         {comparison && comparison.blocks > 0 && (comparison.mismatches.length === 0
           ? <p className="notice good"><CheckCircle2 size={16} /> The MSWD PERFORMANCE sheet in your file is correct: all {n(comparison.checked)} numbers match its MASTER DATA.</p>
@@ -248,9 +257,9 @@ export default function MswdDialog({ onClose }: { onClose: () => void }) {
           {merges.size > 0 && <p className="hint">Counted as another worker: {[...merges].map(([a, b]) => `${a} → ${b}`).join('; ')}. <button className="link" onClick={() => setMerges(new Map())}>Undo</button></p>}
         </section>
 
-        <details className="mswd-details">
+        {trim && <details className="mswd-details">
           <summary>Entry corrections ({n(fixCount)} entries in {plan.filter((p) => p.fixes.length).length} columns)</summary>
-          <p className="hint">Only the columns the report counts are corrected: extra spaces, letter case, stray commas, and typing slips such as ILOLO for ILOILO. Untick a correction to keep the entry as it was typed. Names, numbers, and notes are never changed.</p>
+          <p className="hint">The columns the report counts are corrected: extra spaces, letter case, stray commas, and typing slips such as ILOLO for ILOILO. Untick a correction to keep the entry as it was typed. Every other cell only has its extra spaces trimmed.</p>
           {plan.filter((p) => p.fixes.length).map((p) => {
             const keys = p.fixes.map((f) => `${p.col}\u0001${f.from}`);
             const off = keys.filter((k) => skip.has(k)).length;
@@ -270,7 +279,7 @@ export default function MswdDialog({ onClose }: { onClose: () => void }) {
               </div>
             );
           })}
-        </details>
+        </details>}
 
         <details className="mswd-details">
           <summary>Columns used</summary>

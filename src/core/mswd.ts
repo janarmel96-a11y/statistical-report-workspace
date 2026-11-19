@@ -1,7 +1,7 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { FULL_CLEANUP, listFixes, planCleanup, TIDY_ONLY, variantKey, type CleanReason, type ValueFix } from './cleanup';
 import { detectDateOrder, IDENTIFIER_NAME, parseDate, PERSON_NAME } from './parse';
-import { isLikelyTypo } from './typos';
+import { isLikelyTypo, isSimilarEntry } from './typos';
 import type { RawCell } from './types';
 
 /**
@@ -146,6 +146,19 @@ export interface Prepared {
   workerFixed: number;
   /** Misspelled place names found by this app. Empty when the file already had its own error columns. */
   audit: AuditLine[];
+  /** Cells outside the counted columns whose extra spaces were trimmed. */
+  trimmed: number;
+}
+
+export interface PrepareOptions {
+  /** Trims extra spaces, tabs, and invisible characters in every cell the entry corrections do not cover. Letters are never changed. */
+  trim?: boolean;
+}
+
+const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF\u00AD]/g;
+/** Removes spaces at both ends, repeated spaces, tabs, and invisible characters. Line breaks inside notes are kept. */
+export function trimText(s: string): string {
+  return s.replace(ZERO_WIDTH, '').replace(/[^\S\r\n]+/g, ' ').replace(/ *\r?\n */g, '\n').replace(/\n{2,}/g, '\n').trim();
 }
 
 const PLACE_FIELDS = ['barangay', 'municipality', 'province', 'region'] as const;
@@ -155,7 +168,7 @@ const PLACE_LABEL: Record<PlaceField, string> = { barangay: 'Barangay', municipa
  * Entry corrections that count as a misspelled place name, and the word written in the error column.
  * Spacing, letter case, and stray commas are corrected but are not misspellings.
  */
-const ERROR_WORD: Partial<Record<CleanReason, string>> = { 'likely typo': 'typo' };
+const ERROR_WORD: Partial<Record<CleanReason, string>> = { 'likely typo': 'typo', 'similar spelling': 'typo' };
 /** Only the columns the report counts are corrected. Names, numbers, and notes stay exactly as they were entered. */
 const CORRECTED: MswdField[] = ['worker', 'patientType', 'patientStatus', 'typeOfPatient', 'classification', 'service', 'barangay', 'municipality', 'province', 'region'];
 const CODE_NAME = /(^|\s)(no\.?|number|id|code)$|control no|hospital no|philhealth id/i;
@@ -192,6 +205,8 @@ export function planEntryCleanup(headers: string[], rows: RawCell[][], cols: Msw
     const name = String(headers[c] ?? '').trim();
     const code = IDENTIFIER_NAME.test(name) || CODE_NAME.test(name);
     const plan = planCleanup(counts, code ? TIDY_ONLY : { ...FULL_CLEANUP, typos: !PERSON_NAME.test(name) }, context);
+    const field = (Object.keys(cols) as MswdField[]).find((f) => cols[f] === c);
+    if (field) codeFixes(field, counts, plan);
     plans.set(c, plan);
     const fixes = listFixes(counts, plan);
     if (fixes.length) out.push({ col: c, name, fixes });
@@ -215,6 +230,51 @@ export function withMerges(plan: CleanupColumn[], headers: string[], rows: RawCe
   });
   const next: CleanupColumn = { col, name: own?.name ?? String(headers[col] ?? '').trim(), fixes: [...fixes.values()].sort((a, b) => b.count - a.count) };
   return own ? plan.map((p) => (p === own ? next : p)) : [...plan, next].sort((a, b) => a.col - b.col);
+}
+
+/**
+ * Wrong entries in the coded columns: other ways of writing a code the report counts, such as OPD or "Out Patient"
+ * for OP, ER-ED for ER/ED, C-3 for C3, NA for N/A, or "New Patient" for New. Unclear entries are left alone.
+ */
+const CODES: Partial<Record<MswdField, Record<string, string[]>>> = {
+  typeOfPatient: {
+    ER: ['ER', 'EMERGENCY', 'EMERGENCYROOM'],
+    'ER/ED': ['ER/ED', 'ERED', 'ED/ER', 'EDER', 'ED', 'EMERGENCYDEPARTMENT'],
+    OP: ['OP', 'OPD', 'OUTPATIENT', 'OUTPATIENTDEPARTMENT', 'OPDPATIENT'],
+    IP: ['IP', 'IPD', 'INPATIENT', 'INPATIENTDEPARTMENT', 'ADMITTED'],
+  },
+  classification: {
+    B: ['B'], C1: ['C1', 'CI'], C2: ['C2', 'CII'], C3: ['C3', 'CIII'], 'N/A': ['N/A', 'NA', 'NOTAPPLICABLE'],
+  },
+  patientType: { NEW: ['NEW', 'NEWPATIENT', 'NEWCASE'], OLD: ['OLD', 'OLDPATIENT', 'OLDCASE', 'RETURNING', 'RETURNINGPATIENT'] },
+  patientStatus: { NEW: ['NEW', 'NEWPATIENT', 'NEWCASE'], OLD: ['OLD', 'OLDPATIENT', 'OLDCASE', 'RETURNING', 'RETURNINGPATIENT'] },
+};
+const codeKey = (s: string) => s.toUpperCase().replace(/^(CLASS(IFICATION)?|TYPE)\b/, '').replace(/[^A-Z0-9/]/g, '');
+
+/** The code an entry stands for, or null when it is not one of the known ways of writing a code. */
+export function codeFor(field: MswdField, value: string): string | null {
+  const codes = CODES[field];
+  if (!codes) return null;
+  const key = codeKey(value);
+  for (const [code, ways] of Object.entries(codes)) if (ways.includes(key)) return code;
+  return null;
+}
+
+/** Adds the wrong-entry fixes of one coded column. A code keeps the spelling the column already uses most, such as "New". */
+function codeFixes(field: MswdField, counts: Map<string, number>, plan: Map<string, { to: string; reason: CleanReason }>) {
+  if (!CODES[field]) return;
+  const spelling = new Map<string, { s: string; n: number }>();
+  counts.forEach((n, v) => {
+    const now = plan.get(v)?.to ?? v;
+    const code = Object.keys(CODES[field]!).find((c) => c.toUpperCase() === now.toUpperCase().trim());
+    if (code && (spelling.get(code)?.n ?? 0) < n) spelling.set(code, { s: now, n });
+  });
+  counts.forEach((_, v) => {
+    const now = plan.get(v)?.to ?? v;
+    const code = codeFor(field, now);
+    if (!code || code.toUpperCase() === now.toUpperCase()) return;
+    plan.set(v, { to: spelling.get(code)?.s ?? code, reason: 'wrong entry' });
+  });
 }
 
 /** Wildcards would change what COUNTIFS matches, so they never stay in a name. */
@@ -256,7 +316,7 @@ export function wrongFieldKeys(rows: RawCell[][], cols: MswdColumns, value: (r: 
  * and place-name error columns when the file does not have them. The original rows are never changed.
  * Rows are put in month order, then in the order they were entered.
  */
-export function prepare(headers: string[], rows: RawCell[][], cols: MswdColumns, plan: CleanupColumn[], skip: Set<string> = new Set()): Prepared {
+export function prepare(headers: string[], rows: RawCell[][], cols: MswdColumns, plan: CleanupColumn[], skip: Set<string> = new Set(), opts: PrepareOptions = {}): Prepared {
   const maps = new Map<number, Map<string, { to: string; reason: CleanReason }>>();
   for (const p of plan) {
     const m = new Map<string, { to: string; reason: CleanReason }>();
@@ -275,7 +335,7 @@ export function prepare(headers: string[], rows: RawCell[][], cols: MswdColumns,
   if (addType) layout.splice(addMonth ? 0 : cols.month! + 1, 0, 'type');
   if (addMonth) layout.unshift('month');
   const added: string[] = [...(addMonth ? ['Month'] : []), ...(addType ? ['Patient Type'] : [])];
-  const outHeaders = layout.map((x) => (x === 'month' ? 'Month' : x === 'type' ? 'Patient Type' : String(headers[x] ?? '').trim()));
+  const outHeaders = layout.map((x) => (x === 'month' ? 'Month' : x === 'type' ? 'Patient Type' : opts.trim ? trimText(String(headers[x] ?? '')) : String(headers[x] ?? '').trim()));
   const outCols: MswdColumns = {};
   for (const k of Object.keys(cols) as MswdField[]) outCols[k] = layout.indexOf(cols[k]!);
   if (addMonth) outCols.month = layout.indexOf('month');
@@ -304,12 +364,28 @@ export function prepare(headers: string[], rows: RawCell[][], cols: MswdColumns,
     return ms === null ? v : { date: ms };
   };
 
+  // The counted columns have their own corrections, which can be reviewed one by one; every other text cell is trimmed.
+  const reviewed = new Set(CORRECTED.map((f) => cols[f]).filter((c): c is number => c !== undefined));
+  let trimmed = 0;
+  const tidy = (v: string, c: number): RawCell => {
+    if (!opts.trim || reviewed.has(c)) return v;
+    const t = trimText(v);
+    if (t === v) return v;
+    trimmed++;
+    return t === '' ? null : t;
+  };
+
   const months = new Map<string, number>();
   const audit = new Map<string, AuditLine>();
   let monthFixed = 0;
   let workerFixed = 0;
   const built = rows.map((r) => {
-    const row = r.map((v, c) => (typeof v === 'string' ? (dateOrder.has(c) ? asDate(v, c) : maps.get(c)?.get(v)?.to ?? v) : v));
+    const row = r.map((v, c) => {
+      if (typeof v !== 'string') return v;
+      if (dateOrder.has(c)) return asDate(v, c);
+      const fix = maps.get(c)?.get(v);
+      return fix ? fix.to : tidy(v, c);
+    });
     if (cols.worker !== undefined) {
       const w = row[cols.worker];
       if (typeof w === 'string' && /[*?~]/.test(w)) { row[cols.worker] = noWildcards(w); workerFixed++; }
@@ -348,7 +424,7 @@ export function prepare(headers: string[], rows: RawCell[][], cols: MswdColumns,
   });
   built.sort((a, b) => a.key - b.key || a.at - b.at);
   return {
-    headers: outHeaders, rows: built.map((b) => b.row), cols: outCols, added, monthFixed, workerFixed,
+    headers: outHeaders, rows: built.map((b) => b.row), cols: outCols, added, monthFixed, workerFixed, trimmed,
     months: [...months].map(([label, key]) => ({ label, key })).sort((a, b) => a.key - b.key),
     audit: [...audit.values()].sort((a, b) => b.times - a.times || a.field.localeCompare(b.field) || a.value.localeCompare(b.value)),
   };
@@ -711,7 +787,7 @@ export function workerChecks(p: Prepared, workers: string[], lowCount = 50): Wor
   for (const w of workers) surnames.set(surname(w), (surnames.get(surname(w)) ?? 0) + 1);
   return stats.map((s) => {
     const key = variantKey(s.name);
-    const twin = stats.find((o) => o !== s && o.total > s.total && isLikelyTypo(key, variantKey(o.name)));
+    const twin = stats.find((o) => o !== s && o.total > s.total && (isLikelyTypo(key, variantKey(o.name)) || isSimilarEntry(key, variantKey(o.name))));
     // Same order as the formula on DATA CHECKS: the low-count note first.
     const flags = [
       s.total < lowCount ? 'Low patient count.' : '',

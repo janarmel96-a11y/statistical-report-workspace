@@ -178,6 +178,8 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .mswd-files { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
 .mswd-files span { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 9px; border-radius: 99px; background: var(--surface-2); }
 .mswd-title { font-size: 15px; color: var(--accent); }
+.mswd-autofix { display: grid; gap: 4px; padding: 9px 12px; border-radius: 10px; background: var(--accent-soft); }
+.mswd-autofix small { color: var(--ink-2); font-size: 12.5px; }
 .mswd-block { display: grid; gap: 6px; }
 .mswd-block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .mswd-block .mini-table { max-height: 300px; }

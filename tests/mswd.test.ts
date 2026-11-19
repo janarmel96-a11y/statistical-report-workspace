@@ -89,6 +89,24 @@ describe('MSWD data preparation', () => {
     // A service date decades before the entry is a typing slip, so the Timestamp decides the month.
     expect(p.rows[2][p.cols.month!]).toBe('NOVEMBER 2026');
   });
+  it('trims extra spaces in every other cell when asked, without touching the reviewed columns', () => {
+    const headers = ['Month', 'Medical Social Worker', 'Patient Family Name', 'Hospital No. ', 'Remarks', 'Type of Patient'];
+    const rows: RawCell[][] = [
+      ['JANUARY 2026', 'A', ' ABOLOCION ', '25-11-82 \u200B', 'first line  \n\n  second\tline', 'OP '],
+      ['JANUARY 2026', 'A', 'BRAGA', '24-86-07', '   ', 'OP'],
+    ];
+    const cols = detectColumns(headers);
+    const plan = planEntryCleanup(headers, rows, cols);
+    const keep = new Set(plan.flatMap((p) => p.fixes.map((f) => `${p.col}\u0001${f.from}`)));
+    const p = prepare(headers, rows, cols, plan, keep, { trim: true });
+    expect(p.rows[0].slice(2, 5)).toEqual(['ABOLOCION', '25-11-82', 'first line\nsecond line']);
+    expect(p.rows[1][4]).toBeNull();
+    // Type of Patient is a counted column: its correction was switched off, so auto trim leaves it as typed.
+    expect(p.rows[0][5]).toBe('OP ');
+    expect(p.trimmed).toBe(4);
+    expect(p.headers[3]).toBe('Hospital No.');
+    expect(prepare(headers, rows, cols, plan).rows[0][2]).toBe(' ABOLOCION ');
+  });
   it('flags typos and place names typed in the wrong column', () => {
     const { p } = build();
     const c = p.cols;

@@ -1,5 +1,5 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
-import { FULL_CLEANUP, listFixes, planCleanup, TIDY_ONLY, type ValueFix } from './cleanup';
+import { FULL_CLEANUP, listFixes, MISSPELLING, planCleanup, TIDY_ONLY, type ValueFix } from './cleanup';
 import { AGE_NAME, IDENTIFIER_NAME, PERSON_NAME, type InferredColumn } from './parse';
 import { getColumn } from './recipe';
 import type { Cell, CellChange, Column, DataTable, Finding, Step } from './types';
@@ -354,7 +354,7 @@ export function runAudit(t: DataTable, inferred: InferredColumn[] = []): Finding
     const step = (list: ValueFix[], reason: string): Step => ({ op: 'replaceMany', col: c.name, pairs: list.map((f) => [f.from, f.to]), reason });
     const rows = (list: ValueFix[]) => list.reduce((n, f) => n + f.count, 0);
 
-    const labels = fixes.filter((f) => f.reason !== 'likely typo');
+    const labels = fixes.filter((f) => !MISSPELLING.includes(f.reason));
     if (labels.length) {
       const affected = rows(labels);
       const kinds = (['stray characters', 'letter case', 'spelling variant', 'extra spaces'] as const)
@@ -367,8 +367,8 @@ export function runAudit(t: DataTable, inferred: InferredColumn[] = []): Finding
       });
     }
 
-    /* A rare label one typing slip away from a far more common label is treated as a misspelling. */
-    const typos = fixes.filter((f) => f.reason === 'likely typo');
+    /* A rare label one typing slip away from, or clearly similar to, a far more common label is treated as a misspelling. */
+    const typos = fixes.filter((f) => MISSPELLING.includes(f.reason));
     if (typos.length) {
       const labelTo = new Map(labels.map((f) => [f.from, f.to]));
       const misspelled = new Set(typos.map((f) => f.from));
@@ -378,7 +378,7 @@ export function runAudit(t: DataTable, inferred: InferredColumn[] = []): Finding
       add({
         kind: 'label-variants', severity: 'warning', column: c.name, count: n, auto: true, steps: [step(typos, 'Likely misspelled')], changes: [],
         title: `${n.toLocaleString('en-US')} likely misspelled label${n > 1 ? 's' : ''} in ${c.name}`,
-        detail: `Each differs by one letter from a much more common label, so they were counted together: ${typos.slice(0, 3).map((f) => `"${f.from}" (${f.count.toLocaleString('en-US')}) → "${f.to}" (${(kept.get(f.to) ?? 0).toLocaleString('en-US')})`).join(', ')}. Switch this off if they are really different.`,
+        detail: `Each is spelled almost like a much more common label (a missing, extra, or swapped letter, a sound-alike letter, a missing space, or a shortened word), so they were counted together: ${typos.slice(0, 3).map((f) => `"${f.from}" (${f.count.toLocaleString('en-US')}) → "${f.to}" (${(kept.get(f.to) ?? 0).toLocaleString('en-US')})`).join(', ')}. Switch this off if they are really different.`,
       });
     }
   }

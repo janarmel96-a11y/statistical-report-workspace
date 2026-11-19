@@ -1,5 +1,5 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
-import { isLikelyTypo } from './typos';
+import { isLikelyTypo, isSimilarEntry } from './typos';
 
 /**
  * Entry cleanup: corrects how text was typed, before anything is counted.
@@ -7,7 +7,10 @@ import { isLikelyTypo } from './typos';
  * so it can be listed, reviewed, and switched off.
  */
 
-export type CleanReason = 'extra spaces' | 'stray characters' | 'letter case' | 'spelling variant' | 'likely typo';
+export type CleanReason = 'extra spaces' | 'stray characters' | 'letter case' | 'spelling variant' | 'likely typo' | 'similar spelling' | 'wrong entry';
+
+/** Corrections that change the letters of an entry, not just how it was typed. */
+export const MISSPELLING: readonly CleanReason[] = ['likely typo', 'similar spelling'];
 
 export interface ValueFix { from: string; to: string; reason: CleanReason; count: number }
 
@@ -16,7 +19,7 @@ export interface CleanOptions {
   variants: boolean;
   /** Write entries in capitals when almost every entry in the column already is. */
   matchCase: boolean;
-  /** Merge a rare label one typing slip away from a far more common label. */
+  /** Merge a rare label one typing slip away from a far more common label, or clearly similar to one. */
   typos: boolean;
 }
 
@@ -122,9 +125,10 @@ export function planCleanup(counts: Map<string, number>, opts: CleanOptions, con
     mainOf.set(key, { main: ranked[0][0], n: [...g.values()].reduce((a, b) => a + b, 0) });
   });
 
-  // A rare entry one typing slip from a much more common entry is the same entry. With a context,
-  // such as the municipality of a barangay, both spellings must also appear in the same place.
-  const typoTo = new Map<string, string>();
+  // A rare entry one typing slip from a much more common entry is the same entry. A rare entry that is only
+  // similar (a sound-alike letter, a missing space, a shortened word) needs an even more common match.
+  // With a context, such as the municipality of a barangay, both spellings must also appear in the same place.
+  const typoTo = new Map<string, { key: string; similar: boolean }>();
   const placesOf = new Map<string, Set<string>>();
   context?.forEach((set, v) => {
     if (!tidy.has(v)) return;
@@ -142,8 +146,12 @@ export function planCleanup(counts: Map<string, number>, opts: CleanOptions, con
     const all = [...mainOf].map(([key, x]) => ({ key, ...x }));
     const common = all.filter((x) => x.n >= 20);
     for (const rare of all) {
-      const hits = common.filter((o) => o !== rare && o.n >= Math.max(20, rare.n * 20) && isLikelyTypo(rare.key, o.key) && samePlace(rare.key, o.key));
-      if (hits.length === 1) typoTo.set(rare.key, hits[0].key);
+      const nearby = common.filter((o) => o !== rare && o.n >= Math.max(20, rare.n * 20));
+      const hits = nearby.filter((o) => isLikelyTypo(rare.key, o.key) && samePlace(rare.key, o.key));
+      if (hits.length === 1) { typoTo.set(rare.key, { key: hits[0].key, similar: false }); continue; }
+      if (hits.length) continue;
+      const alike = nearby.filter((o) => o.n >= rare.n * 30 && isSimilarEntry(rare.key, o.key) && samePlace(rare.key, o.key));
+      if (alike.length === 1) typoTo.set(rare.key, { key: alike[0].key, similar: true });
     }
   }
 
@@ -152,9 +160,9 @@ export function planCleanup(counts: Map<string, number>, opts: CleanOptions, con
     const t = tidy.get(v)!;
     const key = keyOf(styled(t));
     const typo = typoTo.get(key);
-    const to = mainOf.get(typo ?? key)!.main;
+    const to = mainOf.get(typo?.key ?? key)!.main;
     if (to === v) return;
-    out.set(v, { to, reason: typo ? 'likely typo' : reasonFor(v, t, to) });
+    out.set(v, { to, reason: typo ? (typo.similar ? 'similar spelling' : 'likely typo') : reasonFor(v, t, to) });
   });
   return out;
 }
