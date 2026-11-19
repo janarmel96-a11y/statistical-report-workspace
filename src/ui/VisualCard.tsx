@@ -9,6 +9,7 @@ import type { Cell, Constraint, FieldRef } from '../core/types';
 import { filterSummary, pageConstraints, useStore } from '../state/store';
 import { buildChart, designTheme, vizTheme } from './chartOptions';
 import { Popover, Sparkline, useDarkMode } from './common';
+import { CountUp } from './CountUp';
 import { EChart, type ChartEvent } from './EChart';
 import { FieldIcon } from './FieldIcon';
 import { IconBreakdown } from './PageElements';
@@ -24,7 +25,7 @@ function Kpi({ v, cs }: { v: Visual; cs: Constraint[] }) {
   const up = (k.change ?? 0) >= 0;
   return (
     <div className="kpi">
-      <strong title={formatNumber(k.value, k)}>{formatNumber(k.value, { ...k, compact: true })}</strong>
+      <strong title={formatNumber(k.value, k)}><CountUp text={formatNumber(k.value, { ...k, compact: true })} /></strong>
       <div className="kpi-foot">
         {k.change !== null ? (
           <span className={`delta ${k.change === 0 ? '' : up ? 'up' : 'down'}`}>
@@ -169,7 +170,7 @@ export const VisualCard = memo(function VisualCard({ visual: v, onDrillThrough }
     if (v.type === 'table') return <DataTableVisual v={v} cs={pageCs} />;
     if (v.type === 'insights') return <InsightsList cs={cs} />;
     if (build?.meta.empty) return <p className="empty-note">{build.meta.note}</p>;
-    const chart = <EChart option={build!.option} label={`${v.title}. Open the table view for exact values.`} patterns={patterns} onClick={onPoint} onContext={onContext} />;
+    const chart = <EChart option={build!.option} label={`${v.title}. Open the table view for exact values.`} patterns={patterns} entrance={report.design?.animate !== false} onClick={onPoint} onContext={onContext} />;
     return field && /^(sex|gender)$/i.test(field.col.trim()) ? <><div className="chart-with-icons">{chart}</div><IconBreakdown col={field.col} cs={pageCs} compact /></> : chart;
   };
 

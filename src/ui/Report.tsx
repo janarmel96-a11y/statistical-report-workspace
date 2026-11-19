@@ -136,8 +136,13 @@ export function Report() {
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [exporting, setExporting] = useState(false);
   const [video, setVideo] = useState(false);
-  // The AI analyst opens by itself on reports made with Automatic report, and from the toolbar on any report.
-  const [analyst, setAnalyst] = useState(() => Boolean(useStore.getState().autoNotice));
+  // The AI analyst opens by itself on every report. Closing it is remembered for that report only.
+  const analystKey = `srw-analyst-hidden:${s.projectId ?? 'new'}`;
+  const [analyst, setAnalystState] = useState(() => { try { return localStorage.getItem(analystKey) !== '1'; } catch { return true; } });
+  const setAnalyst = (open: boolean) => {
+    setAnalystState(open);
+    try { if (open) localStorage.removeItem(analystKey); else localStorage.setItem(analystKey, '1'); } catch { /* private mode */ }
+  };
   const [renaming, setRenaming] = useState<string | null>(null);
   const [bmName, setBmName] = useState('');
   const replaceInput = useRef<HTMLInputElement>(null);

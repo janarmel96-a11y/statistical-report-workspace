@@ -1,4 +1,5 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
+import type { AnalystForecast, KeyNumber } from './analyst';
 import { DAY, monthRange, philippineHolidays, workingDays, type MswdCheck, type MswdReport, type Prepared } from './mswd';
 import { chiSquare, forecast, mannKendall, mean, stdev } from './stats';
 
@@ -7,7 +8,18 @@ import { chiSquare, forecast, mannKendall, mean, stdev } from './stats';
  * who carries the workload, who needs attention, and how the patient mix shifts. Worked out on this device.
  */
 
-export interface MswdBrief { headline: string; sections: { heading: string; lines: string[] }[] }
+export interface MswdBrief {
+  headline: string;
+  sections: { heading: string; lines: string[] }[];
+  keyNumbers: KeyNumber[];
+  /** Patients per complete month, with the next months forecast. */
+  forecast?: AnalystForecast;
+  monthly: { label: string; value: number; partial: boolean }[];
+  /** Patients per RSW in the latest complete month, largest first. */
+  workload?: { month: string; rows: { label: string; value: number }[] };
+  /** Share of NEW and OLD patients in each month. */
+  mix?: { months: string[]; newShare: number[]; oldShare: number[] };
+}
 
 const n = (v: number) => Math.round(v).toLocaleString('en-US');
 const pct = (v: number) => `${(v * 100).toLocaleString('en-US', { maximumFractionDigits: Math.abs(v) < 0.1 ? 1 : 0 })}%`;
@@ -29,11 +41,16 @@ export function analyzeMswd(p: Prepared, report: MswdReport, checks: MswdCheck[]
 
   /* ---------- Patient numbers ---------- */
   const numbers: string[] = [];
+  const keyNumbers: KeyNumber[] = [{ label: 'Patients catered', value: n(total), note: `${active.length} RSWs, ${months.length} months` }];
+  let fc: AnalystForecast | undefined;
+  const monthName = (key: number) => new Date(key).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   numbers.push(`${n(total)} patients were catered by ${active.length} RSWs${months.length ? ` from ${title(months[0].label)} to ${title(months[months.length - 1].label)}` : ''}${full.length ? `, an average of ${n(mean(full.map((x) => x.b.total.total)))} per complete month` : ''}.`);
   let expected: number | null = null;
+  if (full.length) keyNumbers.push({ label: 'Average per month', value: n(mean(full.map((x) => x.b.total.total))), note: `${full.length} complete months` });
   if (full.length >= 2) {
     const [prev, last] = [full[full.length - 2], full[full.length - 1]];
     const change = prev.b.total.total ? (last.b.total.total - prev.b.total.total) / prev.b.total.total : 0;
+    keyNumbers.push({ label: title(last.m.label), value: n(last.b.total.total), note: `${change >= 0 ? 'Up' : 'Down'} ${pct(Math.abs(change))} on ${title(prev.m.label)}`, tone: change > 0.005 ? 'up' : change < -0.005 ? 'down' : 'flat' });
     numbers.push(`${title(last.m.label)} had ${n(last.b.total.total)} patients, ${change >= 0 ? 'up' : 'down'} ${pct(Math.abs(change))} from ${n(prev.b.total.total)} in ${title(prev.m.label)}.`);
     if (change <= -0.15) actions.push(`Find out why patients fell ${pct(Math.abs(change))} in ${title(last.m.label)}: check for holidays, staff leave, or missing form submissions.`);
   }
@@ -44,12 +61,20 @@ export function analyzeMswd(p: Prepared, report: MswdReport, checks: MswdCheck[]
       ? `Monthly totals have no steady rise or fall (Mann-Kendall ${pText(mk.p)}).`
       : `Monthly totals show a statistically significant ${mk.trend === 'up' ? 'rise' : 'fall'} (Mann-Kendall ${pText(mk.p)}).`);
     if (full.length >= 6) {
-      const out = forecast(values, 1);
+      const out = forecast(values, 3);
       const nextKey = (monthRange(full[full.length - 1].m.label)?.to ?? 0) + DAY;
-      const nextLabel = new Date(nextKey).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      const nextLabel = monthName(nextKey);
       if (out) {
         expected = Math.max(0, out.values[0]);
-        numbers.push(`Forecast for ${nextLabel}: about ${n(expected)} patients (95% range ${n(Math.max(0, out.low[0]))} to ${n(out.high[0])}; ${out.method}${out.mape !== null ? `, backtest error about ${pct(out.mape)}` : ''}).`);
+        const text = `Forecast for ${nextLabel}: about ${n(expected)} patients (95% range ${n(Math.max(0, out.low[0]))} to ${n(out.high[0])}; ${out.method}${out.mape !== null ? `, backtest error about ${pct(out.mape)}` : ''}).`;
+        numbers.push(text);
+        const labels = [0, 1, 2].map((h) => { const d = new Date(nextKey); return monthName(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + h, 1)); });
+        fc = {
+          history: full.map((x) => ({ label: title(x.m.label), value: x.b.total.total })), labels,
+          values: out.values.map((v) => Math.max(0, v)), low: out.low.map((v) => Math.max(0, v)), high: out.high.map((v) => Math.max(0, v)),
+          method: out.method, mape: out.mape, text,
+        };
+        keyNumbers.push({ label: `Forecast ${nextLabel}`, value: n(expected), note: `95% range ${n(Math.max(0, out.low[0]))} to ${n(out.high[0])}` });
       }
     }
   }
@@ -64,13 +89,17 @@ export function analyzeMswd(p: Prepared, report: MswdReport, checks: MswdCheck[]
       const done = workingDays(range.from, range.from + (lastDay - 1) * DAY, holidays);
       const all = workingDays(range.from, range.to, holidays);
       const so = blocks[partial].total.total;
-      if (done > 0) numbers.push(`${title(m.label)} is partial (days ${m.partial}): ${n(so)} patients in ${done} of ${all} working days. At this pace it would end near ${n((so / done) * all)}.`);
+      if (done > 0) {
+        numbers.push(`${title(m.label)} is partial (days ${m.partial}): ${n(so)} patients in ${done} of ${all} working days. At this pace it would end near ${n((so / done) * all)}.`);
+        keyNumbers.push({ label: `${title(m.label)} so far`, value: n(so), note: `On pace for about ${n((so / done) * all)} (${done} of ${all} working days)` });
+      }
     }
   }
   sections.push({ heading: 'Patient numbers', lines: numbers });
 
   /* ---------- Workload ---------- */
   const workload: string[] = [];
+  if (overall.top.count && total) keyNumbers.push({ label: 'Top RSW overall', value: n(overall.top.count), note: overall.top.name });
   if (overall.top.count && total) workload.push(`${overall.top.name} catered the most patients overall: ${n(overall.top.count)} (${pct(overall.top.count / total)} of all).`);
   const tops = new Map<string, number>();
   for (const x of full) if (x.b.top.count) tops.set(x.b.top.name, (tops.get(x.b.top.name) ?? 0) + 1);
@@ -147,5 +176,15 @@ export function analyzeMswd(p: Prepared, report: MswdReport, checks: MswdCheck[]
     lastFull && full.length >= 2 ? `${title(lastFull.m.label)} ${lastFull.b.total.total >= full[full.length - 2].b.total.total ? 'up' : 'down'} on ${title(full[full.length - 2].m.label)}` : null,
     expected !== null ? `about ${n(expected)} expected next month` : null,
   ].filter(Boolean).join('; ');
-  return { headline: `${headline}.`, sections };
+  const shareOf = (a: number, b: number) => (a + b ? a / (a + b) : 0);
+  return {
+    headline: `${headline}.`, sections, keyNumbers, forecast: fc,
+    monthly: months.map((m, i) => ({ label: title(m.label), value: blocks[i].total.total, partial: i === partial })),
+    workload: last ? { month: title(last.m.label), rows: last.b.lines.filter((l) => l.total > 0).map((l) => ({ label: l.name, value: l.total })).sort((a, b) => b.value - a.value) } : undefined,
+    mix: months.length ? {
+      months: months.map((m) => title(m.label).replace(/ \d{4}$/, '')),
+      newShare: blocks.map((b) => shareOf(b.total.newPatients, b.total.oldPatients)),
+      oldShare: blocks.map((b) => shareOf(b.total.oldPatients, b.total.newPatients)),
+    } : undefined,
+  };
 }

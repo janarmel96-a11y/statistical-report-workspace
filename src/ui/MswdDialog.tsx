@@ -10,7 +10,10 @@ import { chooseSources, stackSources, type SourceTable } from '../core/mswdSourc
 import type { RawCell, RawTable } from '../core/types';
 import { ACCEPT, MAX_FILE_BYTES, readFile } from '../ingest';
 import { useStore } from '../state/store';
+import { KeyTiles } from './AnalystPanel';
+import { forecastOption, rankedBarsOption, stackedShareOption } from './analystChart';
 import { Modal } from './common';
+import { EChart } from './EChart';
 
 /** One added file, its tables, and the cell layout of an MSWD PERFORMANCE sheet when the file has one. */
 interface Item { key: string; fileName: string; tables: RawTable[]; grid?: RawCell[][] }
@@ -102,6 +105,7 @@ export default function MswdDialog({ onClose, initial }: { onClose: () => void; 
   }, [grid, result, stacked, cols]);
   const similar = useMemo(() => (result ? workerChecks(result.p, result.report.workers).filter((w) => w.similarTo) : []), [result]);
   const brief = useMemo(() => (result ? analyzeMswd(result.p, result.report, result.checks) : null), [result]);
+  const dark = document.documentElement.dataset.theme === 'dark';
 
   const change = (next: Item[]) => { setItems(next); setDone(null); setError(null); setBlock(-1); };
   const addFiles = async (files: FileList | null) => {
@@ -208,9 +212,35 @@ export default function MswdDialog({ onClose, initial }: { onClose: () => void; 
             </section>)}
 
         {brief && (
-          <section className="analyst open mswd-ai" aria-label="AI summary">
-            <header><span className="analyst-badge"><BrainCircuit size={16} /> AI summary</span><h2>{brief.headline}</h2></header>
+          <section className="analyst open mswd-ai" aria-label="AI analyst">
+            <header><span className="analyst-badge"><BrainCircuit size={16} /> AI analyst</span><h2>{brief.headline}</h2></header>
+            {brief.keyNumbers.length > 0 && <KeyTiles items={brief.keyNumbers} />}
             <div className="analyst-body">
+              {brief.forecast && (
+                <div className="analyst-forecast">
+                  <h3>Patients per month and forecast</h3>
+                  <div className="analyst-chart"><EChart option={forecastOption(brief, dark)} label={brief.forecast.text} patterns={false} /></div>
+                  <small>{brief.forecast.method}{brief.forecast.mape !== null ? ` · backtest error ${(brief.forecast.mape * 100).toFixed(0)}%` : ''} · band shows the 95% range</small>
+                </div>
+              )}
+              {!brief.forecast && brief.monthly.length > 1 && (
+                <div className="analyst-forecast">
+                  <h3>Patients per month</h3>
+                  <div className="analyst-chart"><EChart option={rankedBarsOption(brief.monthly.map((m) => ({ label: `${m.label}${m.partial ? ' (partial)' : ''}`, value: m.value })), dark)} label="Patients per month" patterns={false} /></div>
+                </div>
+              )}
+              {brief.workload && brief.workload.rows.length > 1 && (
+                <div className="analyst-segments">
+                  <h3>Workload by RSW, {brief.workload.month}</h3>
+                  <div className="analyst-chart" style={{ height: Math.max(160, brief.workload.rows.length * 24 + 20) }}><EChart option={rankedBarsOption(brief.workload.rows.map((r) => ({ label: r.label, value: r.value })), dark)} label={`Patients per RSW in ${brief.workload.month}`} patterns={false} /></div>
+                </div>
+              )}
+              {brief.mix && brief.mix.months.length > 1 && (
+                <div className="analyst-segments">
+                  <h3>New and old patients by month</h3>
+                  <div className="analyst-chart"><EChart option={stackedShareOption(brief.mix.months, [{ name: 'NEW', values: brief.mix.newShare, color: '#1c5cab' }, { name: 'OLD', values: brief.mix.oldShare, color: '#b8860b' }], dark)} label="Share of new and old patients by month" patterns={false} /></div>
+                </div>
+              )}
               {brief.sections.map((s) => (
                 <div key={s.heading} className="analyst-list">
                   <h3>{s.heading}</h3>

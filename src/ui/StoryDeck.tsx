@@ -1,11 +1,12 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { AlertTriangle, BrainCircuit, CheckCircle2, Info, Sparkles, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import { analyzeReport, type AnalystBrief } from '../core/analyst';
 import { buildStory, type StoryKpi } from '../core/story';
 import type { Constraint } from '../core/types';
 import { useStore } from '../state/store';
 import { forecastOption } from './analystChart';
+import { CountUp } from './CountUp';
 import { EChart } from './EChart';
 
 /**
@@ -41,30 +42,6 @@ export function useStoryDeck(cs: Constraint[], active: boolean): { intro: DeckSl
     ];
     return { intro, outro: [{ kind: 'actions', brief, title: report.title }] };
   }, [active, en, report, findings, disabled, cs]);
-}
-
-/** Counts up to the number inside a formatted value such as "4,894", "₱3.4M", or "45.2%". */
-function CountUp({ text, ms = 1300 }: { text: string; ms?: number }) {
-  const m = text.match(/^([^\d-]*)(-?[\d,]*\.?\d+)(.*)$/);
-  const target = m ? Number(m[2].replace(/,/g, '')) : NaN;
-  const decimals = m?.[2].includes('.') ? m[2].split('.')[1].length : 0;
-  const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const [value, setValue] = useState(reduce || !Number.isFinite(target) ? target : 0);
-  useEffect(() => {
-    if (reduce || !Number.isFinite(target)) return;
-    let frame = 0;
-    const start = performance.now();
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / ms);
-      setValue(target * (1 - (1 - t) ** 3));
-      if (t < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [target, ms, reduce]);
-  if (!m) return <>{text}</>;
-  const shown = value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: m[2].includes(',') });
-  return <>{m[1]}{shown}{m[3]}</>;
 }
 
 const stagger = (i: number, base = 250) => ({ animationDelay: `${base + i * 160}ms` });

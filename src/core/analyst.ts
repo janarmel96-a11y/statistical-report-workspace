@@ -1,10 +1,10 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { detectAnomalies, periodGrowth } from './analytics';
-import { bucketAdd, bucketLabel, bucketStart, lastPeriodIncomplete, type Engine } from './engine';
+import { bucketAdd, bucketLabel, bucketStart, groupConstraint, lastPeriodIncomplete, type Engine } from './engine';
 import { formatNumber } from './format';
-import { bestGrain, pickPlan } from './insights';
-import { anova, chiSquare, forecast, mannKendall, quantileSorted } from './stats';
-import type { Constraint, DatePart, Finding } from './types';
+import { bestGrain, correlations, pickPlan } from './insights';
+import { anova, chiSquare, forecast, iqrOutliers, mannKendall, mean, quantileSorted, skewness } from './stats';
+import type { Cell, Constraint, DatePart, Finding, NumberFormat } from './types';
 
 /**
  * The AI analyst: reads the whole report on this device and writes a brief, the way an analyst would.
@@ -24,10 +24,21 @@ export interface AnalystForecast {
 }
 export interface AnalystDriver { dim: string; strength: number; level: 'strong' | 'moderate' | 'weak'; text: string; test: string }
 export interface AnalystRisk { level: 'high' | 'medium' | 'low'; text: string }
+export interface KeyNumber { label: string; value: string; note?: string; tone?: 'up' | 'down' | 'flat' }
+export interface SegmentRow { label: string; value: number; share: number | null; growth: number | null }
+export interface AnalystSegments { dim: string; rows: SegmentRow[]; text: string[]; growthLabel?: string }
 export interface AnalystBrief {
   headline: string;
   summary: string[];
   metric: string;
+  /** How values of the metric are written, for charts. */
+  format: { format?: NumberFormat; currency?: string };
+  keyNumbers: KeyNumber[];
+  segments?: AnalystSegments;
+  relationships: { text: string; test: string }[];
+  distribution: string[];
+  seasonality?: string;
+  methods: string[];
   trend?: { direction: 'up' | 'down' | 'flat'; p: number; text: string };
   forecast?: AnalystForecast;
   drivers: AnalystDriver[];
@@ -67,12 +78,12 @@ function mainRange(sorted: number[]) {
 }
 
 /** Totals per period inside the main date range, with the change from the period before. */
-function series(en: Engine, metric: NonNullable<ReturnType<typeof pickPlan>['metric']>, date: string, cs: Constraint[]) {
+function series(en: Engine, metric: NonNullable<ReturnType<typeof pickPlan>['metric']>, date: string, cs: Constraint[], force?: DatePart) {
   const dates = en.numbers(date, en.rows(cs)).sort((a, b) => a - b);
   if (dates.length < 3) return null;
   const { lo, hi } = mainRange(dates);
   const inside = dates.filter((d) => d >= lo && d <= hi);
-  const part = bestGrain(inside[0], inside[inside.length - 1], new Set(inside.map((d) => Math.floor(d / DAY_MS))).size);
+  const part = force ?? bestGrain(inside[0], inside[inside.length - 1], new Set(inside.map((d) => Math.floor(d / DAY_MS))).size);
   const [first, last] = [bucketStart(inside[0], part), bucketStart(inside[inside.length - 1], part)];
   const partial = lastPeriodIncomplete(inside, part);
   const kept = periodGrowth(en, metric, date, part, cs).filter((p) => p.key >= first && p.key <= last);
@@ -99,7 +110,8 @@ export function analyzeReport(en: Engine, findings: Finding[], cs: Constraint[])
     return {
       headline: `${n.toLocaleString('en-US')} rows were read, but there is no number or category to analyze yet.`,
       summary: ['Add a file with a numeric column, a date, or categories such as type or location to get a full analysis.'],
-      metric: 'records', drivers, risks, actions: ['Check that the header row was found and that numbers are not stored as text.'],
+      metric: 'records', format: {}, keyNumbers: [], relationships: [], distribution: [], methods: [],
+      drivers, risks, actions: ['Check that the header row was found and that numbers are not stored as text.'],
       confidence: { level: 'low', reason: 'Too little data to analyze.' },
     };
   }
@@ -110,6 +122,13 @@ export function analyzeReport(en: Engine, findings: Finding[], cs: Constraint[])
   const fmt = en.valueFormat(metric);
   const f = (v: number | null) => formatNumber(v, { ...fmt, compact: true });
   const total = en.evaluate(metric, cs);
+  // Key figures are written in full unless they are very large.
+  const full_ = (v: number | null) => (v !== null && Math.abs(v) < 1e7 ? formatNumber(v, fmt) : f(v));
+  const keyNumbers: KeyNumber[] = [{ label: counting ? 'Records' : `Total ${name}`, value: full_(total) }];
+  const methods: string[] = [];
+  let fullPts: { key: number; label: string; value: number; growth: number | null }[] = [];
+  let timePart: DatePart = 'month';
+  let seasonality: string | undefined;
   summary.push(counting
     ? `The report covers ${n.toLocaleString('en-US')} records${plan.date ? '' : '.'}`
     : `${Name} totals ${f(total)} across ${n.toLocaleString('en-US')} rows${plan.date ? '' : '.'}`);
@@ -126,6 +145,9 @@ export function analyzeReport(en: Engine, findings: Finding[], cs: Constraint[])
     if (s?.outside) risks.push({ level: 'low', text: `${s.outside.toLocaleString('en-US')} ${s.outside === 1 ? 'row has a date' : 'rows have dates'} in ${plan.date} far outside the rest, likely typing slips in the year; ${s.outside === 1 ? 'it is' : 'they are'} left out of the trend.` });
     const full = points.filter((p) => !p.partial);
     periods = full.length;
+    fullPts = full;
+    timePart = part;
+    if (full.length) keyNumbers.push({ label: `Average per ${word}`, value: full_(mean(full.map((p) => p.value))), note: `${full.length} complete ${word}s` });
     if (points.length) summary[0] += ` from ${points[0].label} to ${points[points.length - 1].label}.`;
     const partial = points.find((p) => p.partial);
     if (partial) risks.push({ level: 'low', text: `${partial.label} is still in progress, so its ${f(partial.value)} is not comparable with complete ${word}s yet.` });
@@ -143,7 +165,42 @@ export function analyzeReport(en: Engine, findings: Finding[], cs: Constraint[])
           : `${Name} ${direction === 'up' ? 'rose' : 'fell'} steadily from ${f(first.value)} in ${first.label} to ${f(last.value)} in ${last.label}${moved}, a statistically significant ${direction}ward trend (Mann-Kendall ${pText(mk.p)}).`,
       };
       summary.push(trend.text);
+      methods.push('Trend: Mann-Kendall test on complete periods (no assumption about the shape of the trend).');
       const prev = full[full.length - 2];
+      keyNumbers.push({ label: `Latest ${word} (${last.label})`, value: full_(last.value), note: last.growth === null ? undefined : `${last.growth >= 0 ? 'Up' : 'Down'} ${pct(Math.abs(last.growth))} on ${prev?.label}`, tone: last.growth === null ? undefined : last.growth > 0.005 ? 'up' : last.growth < -0.005 ? 'down' : 'flat' });
+      const back = part === 'month' ? 12 : part === 'quarter' ? 4 : part === 'week' ? 52 : 0;
+      const yearAgo = back ? full.find((p) => p.key === bucketAdd(last.key, part, -back)) : undefined;
+      if (yearAgo && yearAgo.value) {
+        const yoy = (last.value - yearAgo.value) / Math.abs(yearAgo.value);
+        keyNumbers.push({ label: `Same ${word} last year`, value: full_(yearAgo.value), note: `${last.label} is ${yoy >= 0 ? 'up' : 'down'} ${pct(Math.abs(yoy))} year on year`, tone: yoy > 0.005 ? 'up' : yoy < -0.005 ? 'down' : 'flat' });
+        summary.push(`Compared with the same ${word} last year (${yearAgo.label}), ${last.label} is ${yoy >= 0 ? 'up' : 'down'} ${pct(Math.abs(yoy))}.`);
+      }
+      const best = full.reduce((a, b) => (b.value > a.value ? b : a));
+      const worst = full.reduce((a, b) => (b.value < a.value ? b : a));
+      keyNumbers.push({ label: `Best ${word}`, value: full_(best.value), note: best.label }, { label: `Lowest ${word}`, value: full_(worst.value), note: worst.label });
+      // Seasonality is measured on months after removing the trend: each month is compared with a centred
+      // 12-month moving average, so steady growth is not mistaken for a busy end of year.
+      const monthly = part === 'month' ? full : (series(en, metric, plan.date, cs, 'month')?.points ?? []).filter((p) => !p.partial);
+      if (monthly.length >= 24) {
+        const full = monthly;
+        const ratios = Array.from({ length: 12 }, () => [] as number[]);
+        for (let i = 6; i + 6 < full.length; i++) {
+          let s = (full[i - 6].value + full[i + 6].value) / 2;
+          for (let k = i - 5; k <= i + 5; k++) s += full[k].value;
+          const cma = s / 12;
+          if (cma > 0) ratios[new Date(full[i].key).getUTCMonth()].push(full[i].value / cma);
+        }
+        const months = ratios.map((xs, m) => ({ m, v: xs.length ? mean(xs) : NaN })).filter((x) => Number.isFinite(x.v));
+        if (months.length === 12) {
+          const hi = months.reduce((a, b) => (b.v > a.v ? b : a));
+          const lo = months.reduce((a, b) => (b.v < a.v ? b : a));
+          const NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+          if (hi.v - 1 >= 0.08 && 1 - lo.v >= 0.05) {
+            seasonality = `${Name} follows a yearly pattern: after allowing for the trend, it is highest in ${NAMES[hi.m]} (${pct(hi.v - 1)} above normal) and lowest in ${NAMES[lo.m]} (${pct(1 - lo.v)} below).`;
+            methods.push('Seasonality: each month against a centred 12-month moving average, over at least two years.');
+          }
+        }
+      }
       if (prev && last.growth !== null) {
         summary.push(`The latest complete ${word}, ${last.label}, ${last.growth >= 0 ? 'was up' : 'was down'} ${pct(Math.abs(last.growth))} on ${prev.label}.`);
         if (last.growth <= -0.2) actions.push(`Look into the ${pct(Math.abs(last.growth))} drop in ${name} in ${last.label} compared with ${prev.label}.`);
@@ -169,6 +226,8 @@ export function analyzeReport(en: Engine, findings: Finding[], cs: Constraint[])
             text: `Forecast for ${labels[0]}: about ${f(values3[0])} (95% range ${f(low[0])} to ${f(high[0])}), then ${f(values3[1])} and ${f(values3[2])}. Method: ${out.method}${out.mape !== null ? `, backtest error about ${pct(out.mape)}` : ''}.`,
           };
           summary.push(fc.text);
+          keyNumbers.push({ label: `Forecast ${labels[0]}`, value: full_(values3[0]), note: `95% range ${f(low[0])} to ${f(high[0])}` });
+          methods.push(`Forecast: ${out.method} with a 95% range from past errors${out.mape !== null ? `, checked on the last ${word}s held back (backtest error ${pct(out.mape)})` : ''}.`);
           if (width !== null && width > 0.35) actions.push(`Treat the forecast as a rough guide: its range is ±${pct(width)}. More ${word}s of data will narrow it.`);
         }
       }
@@ -213,6 +272,87 @@ export function analyzeReport(en: Engine, findings: Finding[], cs: Constraint[])
     }
   }
   drivers.sort((a, b) => b.strength - a.strength);
+  if (drivers.length) methods.push(counting ? 'Groups: share of records in each group.' : 'Drivers: one-way ANOVA; eta squared is the share of differences a group explains.');
+
+  /* ---------- Segment performance: the groups, their share, and how they changed ---------- */
+  let segments: AnalystSegments | undefined;
+  const segDim = (counting ? plan.highlights : drivers.map((d) => d.dim)).concat(dims).find((d) => {
+    const k = new Set(en.column(d)?.values.filter((v) => v !== null)).size;
+    return k >= 3 && k <= 15;
+  }) ?? drivers[0]?.dim;
+  if (segDim) {
+    const keyLabel = (k: Cell) => (typeof k === 'boolean' ? (k ? 'Yes' : 'No') : String(k));
+    const additive = counting || en.isAdditive(metric);
+    const [last, prev] = [fullPts[fullPts.length - 1], fullPts[fullPts.length - 2]];
+    const field = plan.date ? { col: plan.date, part: timePart } : null;
+    const rowsOut: SegmentRow[] = [...en.groupRows(cs, { col: segDim }).keys()].filter((k) => k !== null).map((k) => {
+      const g = groupConstraint({ col: segDim }, k);
+      const value = en.evaluate(metric, [...cs, g]) ?? 0;
+      let growth: number | null = null;
+      if (field && last && prev) {
+        const v1 = en.evaluate(metric, [...cs, g, groupConstraint(field, last.key)]) ?? 0;
+        const v0 = en.evaluate(metric, [...cs, g, groupConstraint(field, prev.key)]) ?? 0;
+        growth = v0 && (!counting || v0 >= 5) ? (v1 - v0) / Math.abs(v0) : null;
+      }
+      return { label: keyLabel(k), value, share: additive && total ? value / total : null, growth };
+    }).sort((a, b) => b.value - a.value).slice(0, 8);
+    if (rowsOut.length >= 2) {
+      const text: string[] = [];
+      const lead = rowsOut[0];
+      text.push(lead.share !== null
+        ? `${lead.label} leads ${segDim} with ${f(lead.value)} (${pct(lead.share)} of ${name}); ${rowsOut[rowsOut.length - 1].label} is smallest of the top ${rowsOut.length} with ${f(rowsOut[rowsOut.length - 1].value)}.`
+        : `${lead.label} has the highest ${name} in ${segDim} (${f(lead.value)}), ${rowsOut[rowsOut.length - 1].label} the lowest of the top ${rowsOut.length} (${f(rowsOut[rowsOut.length - 1].value)}).`);
+      const moving = rowsOut.filter((r) => r.growth !== null && (r.share === null || r.share >= 0.03));
+      const up = moving.reduce<SegmentRow | null>((a, b) => (!a || (b.growth ?? 0) > (a.growth ?? 0) ? b : a), null);
+      const down = moving.reduce<SegmentRow | null>((a, b) => (!a || (b.growth ?? 0) < (a.growth ?? 0) ? b : a), null);
+      if (up && (up.growth ?? 0) > 0.05) text.push(`${up.label} grew fastest: +${pct(up.growth!)} in ${last!.label} compared with ${prev!.label}.`);
+      if (down && down !== up && (down.growth ?? 0) < -0.05) text.push(`${down.label} fell the most: −${pct(Math.abs(down.growth!))} over the same ${PART_WORD[timePart]}.`);
+      segments = { dim: segDim, rows: rowsOut, text, growthLabel: last && prev ? `${last.label} vs ${prev.label}` : undefined };
+    }
+  }
+
+  /* ---------- Relationships between numeric columns ---------- */
+  // Two columns that move almost exactly together (such as Gross and Net Sales) are one finding, not many:
+  // the second is noted once and left out of the other pairs, so each relationship is reported only once.
+  const pairs = correlations(en.table, rows).filter((c) => c.q < 0.05 && c.n >= 10).sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+  const alias = new Map<string, string>();
+  for (const c of pairs) if (Math.abs(c.r) >= 0.97 && !alias.has(c.a) && !alias.has(c.b)) alias.set(c.b, c.a);
+  const test = (c: typeof pairs[number]) => `Pearson r = ${c.r.toFixed(2)}, Spearman rho = ${c.rho.toFixed(2)}, ${c.q < 0.001 ? 'q < 0.001' : `q = ${c.q.toFixed(3)}`}, n = ${c.n.toLocaleString('en-US')}`;
+  const relationships = [
+    ...[...alias].slice(0, 2).map(([b, a]) => {
+      const c = pairs.find((x) => (x.a === a && x.b === b) || (x.a === b && x.b === a))!;
+      return { text: `${b} moves almost exactly with ${a}, so it tells the same story; it is left out of the comparisons below.`, test: test(c) };
+    }),
+    ...pairs.filter((c) => Math.abs(c.r) >= 0.3 && Math.abs(c.r) < 0.97 && !alias.has(c.a) && !alias.has(c.b)).slice(0, 3).map((c) => {
+      const strength = Math.abs(c.r) >= 0.7 ? 'strong' : Math.abs(c.r) >= 0.5 ? 'moderate' : 'weak';
+      return {
+        text: `${c.a} and ${c.b} ${c.r > 0 ? 'rise and fall together' : 'move in opposite directions'} (${strength} correlation). This shows they are linked, not that one causes the other.`,
+        test: test(c),
+      };
+    }),
+  ];
+  if (relationships.length) methods.push('Relationships: Pearson and Spearman correlation, with Benjamini-Hochberg q-values to avoid chance findings.');
+
+  /* ---------- Distribution and outliers ---------- */
+  const distribution: string[] = [];
+  const distCol = !counting && metricCol ? metricCol : plan.groups.age;
+  if (distCol) {
+    const xs = en.numbers(distCol, rows).sort((a, b) => a - b);
+    if (xs.length >= 20) {
+      const dfmt = (v: number) => (distCol === metricCol ? f(v) : v.toLocaleString('en-US', { maximumFractionDigits: 1 }));
+      const med = quantileSorted(xs, 0.5);
+      const avg = mean(xs);
+      const sk = skewness(xs);
+      const [q1, q3] = [quantileSorted(xs, 0.25), quantileSorted(xs, 0.75)];
+      distribution.push(`Typical ${distCol} is ${dfmt(med)} (median); the middle half lies between ${dfmt(q1)} and ${dfmt(q3)}, and the average is ${dfmt(avg)}${sk > 1 ? ', pulled up by a few large values' : sk < -1 ? ', pulled down by a few small values' : ''} (skewness ${sk.toFixed(1)}).`);
+      const out = iqrOutliers(xs);
+      if (out.indices.length) {
+        const high = xs.filter((v) => v > out.high).length;
+        distribution.push(`${out.indices.length.toLocaleString('en-US')} ${out.indices.length === 1 ? 'value is' : 'values are'} unusually far from the rest (${pct(out.indices.length / xs.length)}): ${high ? `${high.toLocaleString('en-US')} above ${dfmt(out.high)}` : ''}${high && out.indices.length > high ? ' and ' : ''}${out.indices.length > high ? `${(out.indices.length - high).toLocaleString('en-US')} below ${dfmt(out.low)}` : ''}.`);
+      }
+      methods.push('Distribution: median and quartiles; outliers by the 1.5 × IQR rule.');
+    }
+  }
 
   // Did the mix of a group change in the latest period? A chi-square test compares it with the periods before.
   if (plan.date && periods >= 3) {
@@ -268,27 +408,31 @@ export function analyzeReport(en: Engine, findings: Finding[], cs: Constraint[])
     trend ? (trend.direction === 'flat' ? 'holding steady' : `trending ${trend.direction}`) : null,
     fc ? `about ${f(fc.values[0])} expected in ${fc.labels[0]}` : null,
   ].filter(Boolean).join(', ');
-  return { headline: `${headline}.`, summary, metric: name, trend, forecast: fc, drivers: drivers.slice(0, 5), risks: risks.slice(0, 6), actions: [...new Set(actions)].slice(0, 5), confidence };
+  if (risks.some((r) => r.text.startsWith('Unusual'))) methods.push('Unusual periods: robust score of each period against its neighbors.');
+  return {
+    headline: `${headline}.`, summary, metric: name, format: fmt, keyNumbers: keyNumbers.slice(0, 7), segments, relationships, distribution, seasonality, methods,
+    trend, forecast: fc, drivers: drivers.slice(0, 5), risks: risks.slice(0, 6), actions: [...new Set(actions)].slice(0, 5), confidence,
+  };
 }
 
 /** The brief in headed sections, for the AI Summary sheet and slides. */
 export function briefSections(b: AnalystBrief): { heading: string; lines: string[] }[] {
   return [
     { heading: b.headline, lines: b.summary },
+    ...(b.keyNumbers.length ? [{ heading: 'Key numbers', lines: b.keyNumbers.map((k) => `${k.label}: ${k.value}${k.note ? ` (${k.note})` : ''}`) }] : []),
+    ...(b.segments ? [{ heading: `Performance by ${b.segments.dim}`, lines: [...b.segments.text, ...b.segments.rows.map((r) => `${r.label}: ${r.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}${r.share !== null ? `, ${(r.share * 100).toFixed(1)}% of total` : ''}${r.growth !== null ? `, ${r.growth >= 0 ? '+' : ''}${(r.growth * 100).toFixed(1)}% (${b.segments!.growthLabel})` : ''}`)] }] : []),
+    ...(b.seasonality ? [{ heading: 'Seasonal pattern', lines: [b.seasonality] }] : []),
+    ...(b.relationships.length ? [{ heading: 'Relationships', lines: b.relationships.map((r) => `${r.text} (${r.test})`) }] : []),
+    ...(b.distribution.length ? [{ heading: 'Distribution and outliers', lines: b.distribution }] : []),
     ...(b.drivers.length ? [{ heading: 'What drives the numbers', lines: b.drivers.map((d) => `${d.text} (${d.test})`) }] : []),
     { heading: 'Risks and unusual results', lines: b.risks.length ? b.risks.map((r) => `${r.level === 'high' ? 'High' : r.level === 'medium' ? 'Medium' : 'Low'}: ${r.text}`) : ['No anomalies or open data issues were found.'] },
     { heading: 'Recommended actions', lines: b.actions.map((a, i) => `${i + 1}. ${a}`) },
     { heading: `Confidence: ${b.confidence.level}`, lines: [b.confidence.reason] },
+    ...(b.methods.length ? [{ heading: 'How this was worked out', lines: b.methods }] : []),
   ];
 }
 
-/** The brief as plain text, for Excel, PowerPoint notes, and copying. */
+/** The brief as plain text, for PowerPoint notes and copying. */
 export function briefText(b: AnalystBrief): string {
-  return [
-    b.headline, '', ...b.summary, '',
-    ...(b.drivers.length ? ['What drives the numbers:', ...b.drivers.map((d) => `- ${d.text}`), ''] : []),
-    ...(b.risks.length ? ['Risks and unusual results:', ...b.risks.map((r) => `- ${r.text}`), ''] : []),
-    'Recommended actions:', ...b.actions.map((a, i) => `${i + 1}. ${a}`), '',
-    `Confidence: ${b.confidence.level}. ${b.confidence.reason}`,
-  ].join('\n');
+  return briefSections(b).map((sec, i) => [i === 0 ? sec.heading : `${sec.heading}:`, ...sec.lines.map((l) => (i === 0 || /^\d+\./.test(l) ? l : `- ${l}`))].join('\n')).join('\n\n');
 }

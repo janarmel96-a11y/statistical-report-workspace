@@ -793,24 +793,69 @@ function aiSheet(x: Context): XSheet {
   const { st } = x;
   const brief = analyzeMswd(x.p, x.report, x.checks);
   const g = new Grid();
-  g.put(1, 1, 'AI SUMMARY: MSWD PERFORMANCE', st.aiTitle);
+  const AI = q('AI SUMMARY');
+  g.put(1, 1, 'AI ANALYST: MSWD PERFORMANCE', st.aiTitle);
   g.heights.set(1, 30);
-  g.put(2, 1, 'Worked out on this device from MASTER DATA. Each statement names the test or figure behind it.', st.note);
+  g.put(2, 1, 'Worked out on this device from MASTER DATA. Each statement names the test or figure behind it. The charts on the right read the tables at the bottom of this sheet.', st.note);
   g.put(4, 1, brief.headline, st.aiHeadline);
   g.heights.set(4, 36);
+  // Key numbers, one per line, so they stay readable in a narrow window too.
   let r = 6;
-  for (const s of brief.sections) {
-    g.put(r, 1, s.heading.toUpperCase(), st.section);
+  if (brief.keyNumbers.length) {
+    g.put(r++, 1, 'KEY NUMBERS', st.section);
+    for (const k of brief.keyNumbers) { g.put(r, 1, `${k.label}: ${k.value}${k.note ? `  (${k.note})` : ''}`, st.wrapped); r++; }
+    r++;
+  }
+  for (const sec of brief.sections) {
+    g.put(r, 1, sec.heading.toUpperCase(), st.section);
     g.heights.set(r, 20);
     r++;
-    for (const line of s.lines) {
+    for (const line of sec.lines) {
       g.put(r, 1, line, st.wrapped);
-      g.heights.set(r, Math.max(18, Math.ceil(line.length / 120) * 16));
+      g.heights.set(r, Math.max(18, Math.ceil(line.length / 100) * 16));
       r++;
     }
     r++;
   }
-  return { name: 'AI SUMMARY', rows: g.out(), noGrid: true, cols: [{ width: 3 }, { width: 140 }] };
+  // Tables behind the charts.
+  const charts: XSheet['charts'] = [];
+  r += 1;
+  if (brief.monthly.length) {
+    g.put(r, 1, 'PATIENTS PER MONTH', st.section);
+    g.put(r, 2, 'Patients', st.navy);
+    g.put(r, 3, 'Forecast', st.navy);
+    const t0 = r + 1;
+    const rows = [
+      ...brief.monthly.map((m) => ({ label: `${m.label}${m.partial ? ' (partial)' : ''}`, value: m.value as number | null, fc: null as number | null })),
+      ...(brief.forecast ? brief.forecast.labels.map((l, i) => ({ label: `${l} (forecast)`, value: null, fc: Math.round(brief.forecast!.values[i]) })) : []),
+    ];
+    rows.forEach((row, i) => {
+      g.put(t0 + i, 1, row.label, st.name);
+      g.put(t0 + i, 2, row.value, st.count);
+      g.put(t0 + i, 3, row.fc, st.count);
+    });
+    const tl = t0 + rows.length - 1;
+    charts.push({
+      title: 'Patients Catered per Month and Forecast', at: { row: 3, col: 4 }, width: 760, height: 360, categoryTitle: 'Month',
+      series: [
+        { name: 'Patients', categories: `${AI}!${span(t0, 1, tl, 1)}`, values: `${AI}!${span(t0, 2, tl, 2)}`, color: '1C5CAB', cache: { categories: rows.map((x) => x.label), values: rows.map((x) => x.value ?? 0) } },
+        ...(brief.forecast ? [{ name: 'Forecast', type: 'line' as const, categories: `${AI}!${span(t0, 1, tl, 1)}`, values: `${AI}!${span(t0, 3, tl, 3)}`, color: 'B8860B', cache: { categories: rows.map((x) => x.label), values: rows.map((x) => x.fc ?? 0) } }] : []),
+      ],
+    });
+    r = tl + 2;
+  }
+  if (brief.workload && brief.workload.rows.length) {
+    g.put(r, 1, `PATIENTS PER RSW, ${brief.workload.month.toUpperCase()}`, st.section);
+    g.put(r, 2, 'Patients', st.navy);
+    const t0 = r + 1;
+    brief.workload.rows.forEach((w, i) => { g.put(t0 + i, 1, w.label, st.name); g.put(t0 + i, 2, w.value, st.count); });
+    const tl = t0 + brief.workload.rows.length - 1;
+    charts.push({
+      title: `Workload by RSW, ${brief.workload.month}`, at: { row: 25, col: 4 }, width: 760, height: Math.max(360, brief.workload.rows.length * 20 + 100), horizontal: true,
+      series: [{ name: 'Patients', categories: `${AI}!${span(t0, 1, tl, 1)}`, values: `${AI}!${span(t0, 2, tl, 2)}`, color: '4E5B92', cache: { categories: brief.workload.rows.map((w) => w.label), values: brief.workload.rows.map((w) => w.value) } }],
+    });
+  }
+  return { name: 'AI SUMMARY', rows: g.out(), noGrid: true, charts, cols: [{ width: 3 }, { width: 100 }, { width: 12 }, { width: 12 }] };
 }
 
 /* ---------- Workbook ---------- */

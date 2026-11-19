@@ -216,10 +216,10 @@ describe('MSWD workbook', () => {
     expect(wb.Sheets.JANUARY['!ref']).toBe('A1:T61');
     expect(wb.Workbook?.Sheets?.map((s) => s.Hidden)).toEqual([0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0]);
   });
-  it('adds five charts and the drop-down lists', async () => {
+  it('adds seven charts (five as in the original, two on AI SUMMARY) and the drop-down lists', async () => {
     const { p, report, checks } = build();
     const zip = await JSZip.loadAsync(await buildMswdWorkbook(p, report, checks, DEFAULT_OPTIONS));
-    expect(Object.keys(zip.files).filter((f) => /^xl\/charts\/chart\d+\.xml$/.test(f))).toHaveLength(5);
+    expect(Object.keys(zip.files).filter((f) => /^xl\/charts\/chart\d+\.xml$/.test(f))).toHaveLength(7);
     const dashboard = await zip.file('xl/worksheets/sheet1.xml')!.async('string');
     expect(dashboard).toContain('<dataValidation type="list"');
     expect(dashboard).toContain('<drawing r:id="rId1"/>');

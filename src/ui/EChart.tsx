@@ -17,6 +17,8 @@ interface Props {
   option: EChartsCoreOption;
   label: string;
   patterns: boolean;
+  /** Plays a slower, staggered entrance the first time the chart is drawn. */
+  entrance?: boolean;
   onClick?: (e: ChartEvent) => void;
   onContext?: (e: ChartEvent) => void;
 }
@@ -26,9 +28,12 @@ const withAria = (o: EChartsCoreOption, label: string, patterns: boolean) => ({
   aria: { enabled: true, label: { description: label }, decal: { show: patterns } },
 });
 
-export function EChart({ option, label, patterns, onClick, onContext }: Props) {
+const ENTRANCE = { animationDuration: 1000, animationEasing: 'cubicOut' as const, animationDelay: (i: number) => Math.min(i * 35, 700) };
+
+export function EChart({ option, label, patterns, entrance, onClick, onContext }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);
+  const drawn = useRef(false);
   const handlers = useRef({ onClick, onContext });
   handlers.current = { onClick, onContext };
 
@@ -46,8 +51,10 @@ export function EChart({ option, label, patterns, onClick, onContext }: Props) {
   }, []);
 
   useEffect(() => {
-    chart.current?.setOption(withAria(option, label, patterns), { notMerge: true, lazyUpdate: true });
-  }, [option, label, patterns]);
+    const first = !drawn.current && entrance && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+    chart.current?.setOption(withAria(first ? { ...option, ...ENTRANCE } : option, label, patterns), { notMerge: true, lazyUpdate: true });
+    drawn.current = true;
+  }, [option, label, patterns, entrance]);
 
   return <div ref={host} className="echart" role="img" aria-label={label} onContextMenu={(e) => e.preventDefault()} />;
 }
