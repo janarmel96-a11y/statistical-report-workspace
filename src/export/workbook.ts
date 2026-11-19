@@ -17,6 +17,8 @@ export interface WorkbookInput {
   filters: string;
   kpis: { label: string; value: number | null; text?: string; format?: NumberFormat; currency?: string; note?: string }[];
   insights: Insight[];
+  /** The AI analyst brief, one paragraph or bullet per line. */
+  brief?: { heading: string; lines: string[] }[];
   visuals: (VisualTable & { image?: { base64: string; width: number; height: number } })[];
   data: DataTable;
   rows: ArrayLike<number>;
@@ -231,6 +233,27 @@ export async function buildWorkbook(input: WorkbookInput, opts: WorkbookOptions)
     sum.getCell(row, 2).alignment = { wrapText: true, vertical: 'top' };
     sum.getRow(row).height = Math.max(32, Math.ceil(i.text.length / 85) * 16);
     row++;
+  }
+
+  /* AI analyst brief ------------------------------------------------------------------------- */
+  if (input.brief?.length) {
+    const ai = wb.addWorksheet(safeSheetName('AI Summary', used), { views: [{ showGridLines: false }] });
+    title(ai, 'AI analyst brief', 'Worked out on this device from the report\'s own numbers. Each sentence names the test behind it.');
+    ai.getColumn(1).width = 120;
+    let r = 4;
+    for (const part of input.brief) {
+      ai.getCell(r, 1).value = safeText(part.heading);
+      ai.getCell(r, 1).font = { bold: true, size: 12, color: { argb: 'FF1C5CAB' } };
+      r++;
+      for (const line of part.lines) {
+        const c = ai.getCell(r, 1);
+        c.value = safeText(line);
+        c.alignment = { wrapText: true, vertical: 'top' };
+        ai.getRow(r).height = Math.max(18, Math.ceil(line.length / 115) * 16);
+        r++;
+      }
+      r++;
+    }
   }
 
   /* Charts (Excel only: Google Sheets recreates data views from the tables) ----------------- */

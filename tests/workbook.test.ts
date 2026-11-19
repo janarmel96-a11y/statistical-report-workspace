@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
+import { analyzeReport, briefSections } from '../src/core/analyst';
 import { runAudit } from '../src/core/audit';
 import { Engine } from '../src/core/engine';
 import { generateInsights, newReport, profileTable } from '../src/core/insights';
@@ -27,7 +28,7 @@ function retailInput(): WorkbookInput {
   return {
     title: report.title, generatedAt: new Date('2026-11-18T10:00:00Z'), filters: 'None',
     kpis: [{ label: 'Net Sales', value: en.evaluate({ kind: 'col', col: 'Net Sales', agg: 'sum' }, []), format: 'currency' }],
-    insights: generateInsights(en, []), visuals, data: clean, rows: en.allRows, profile: profileTable(clean), findings, measures: [{ name: '=Danger', expr: '=SUM([Net Sales])' }],
+    insights: generateInsights(en, []), brief: briefSections(analyzeReport(en, findings, [])), visuals, data: clean, rows: en.allRows, profile: profileTable(clean), findings, measures: [{ name: '=Danger', expr: '=SUM([Net Sales])' }],
   };
 }
 
@@ -71,6 +72,10 @@ describe('Excel and Google Sheets export', () => {
     const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellFormula: true, cellDates: false });
     expect(wb.SheetNames.slice(0, 1)).toEqual(['Summary']);
     ['Data', 'Column Statistics', 'Corrections', 'Measures'].forEach((n) => expect(wb.SheetNames).toContain(n));
+    // The AI analyst brief has its own sheet, starting with its headline.
+    expect(wb.SheetNames[1]).toBe('AI Summary');
+    expect(String(wb.Sheets['AI Summary'].A1.v)).toBe('AI analyst brief');
+    expect(String(wb.Sheets['AI Summary'].A4.v)).toBe(input.brief![0].heading);
     const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets.Data, { header: 1, blankrows: false });
     expect(rows.length - 3).toBe(input.rows.length);
     const netCol = input.data.columns.findIndex((c) => c.name === 'Net Sales');

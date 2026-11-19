@@ -2,7 +2,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Responsive, WidthProvider, type Layout } from 'react-grid-layout';
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Copy, LockKeyhole, Download, Filter, Highlighter, MonitorPlay, Palette, PanelRight, Pencil, Plus, Printer, Redo2, RefreshCw, Search, SlidersHorizontal, Sparkles, Undo2, X,
+  AlertTriangle, ArrowLeft, ArrowRight, Bookmark, BrainCircuit, Check, Pause, Play, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Copy, LockKeyhole, Download, Filter, Highlighter, MonitorPlay, Palette, PanelRight, Pencil, Plus, Printer, Redo2, RefreshCw, Search, SlidersHorizontal, Sparkles, Undo2, X,
 } from 'lucide-react';
 import { clonePage, resolveDesign } from '../core/design';
 import { formatCell, formatNumber } from '../core/format';
@@ -11,12 +11,14 @@ import { fieldLabel, keyLabel, queryCategories, type Slicer, type Visual } from 
 import type { Cell, FieldRef } from '../core/types';
 import { ACCEPT } from '../ingest';
 import { pageConstraints, useStore } from '../state/store';
+import { AnalystPanel } from './AnalystPanel';
 import { AreaPicker } from './AreaPicker';
 import { Logo, Modal, Popover, ThemeSwitch, useDarkMode } from './common';
 import { FieldIcon } from './FieldIcon';
 import { NameInput } from './NameInput';
 import { ElementCard } from './PageElements';
 import { SidePanel, type SideTab } from './SidePanel';
+import { StorySlideView, useStoryDeck } from './StoryDeck';
 import { VisualCard, type DrillTarget } from './VisualCard';
 
 const Grid = WidthProvider(Responsive);
@@ -134,6 +136,8 @@ export function Report() {
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [exporting, setExporting] = useState(false);
   const [video, setVideo] = useState(false);
+  // The AI analyst opens by itself on reports made with Automatic report, and from the toolbar on any report.
+  const [analyst, setAnalyst] = useState(() => Boolean(useStore.getState().autoNotice));
   const [renaming, setRenaming] = useState<string | null>(null);
   const [bmName, setBmName] = useState('');
   const replaceInput = useRef<HTMLInputElement>(null);
@@ -152,17 +156,35 @@ export function Report() {
     return () => removeEventListener('keydown', key);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* Present mode shows one report page at a time on the full screen. */
+  /*
+   * Present mode: AI story slides first (title, summary, key figures, forecast, findings), then one report page
+   * at a time on the full screen, then the AI's recommended actions. One counter walks through all of them.
+   */
   const pageIndex = report.pages.findIndex((p) => p.id === page?.id);
+  const deck = useStoryDeck(cs, presenting);
+  const [deckPos, setDeckPos] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const deckTotal = deck.intro.length + report.pages.length + deck.outro.length;
   const stepPage = useCallback((by: number) => {
-    const st = useStore.getState();
-    const pages = st.report?.pages ?? [];
-    const at = pages.findIndex((p) => p.id === st.pageId);
-    const next = pages[Math.max(0, Math.min(pages.length - 1, at + by))];
-    if (next) st.setPage(next.id);
-  }, []);
-  const startPresenting = () => { s.selectVisual(null); setPresenting(true); void root.current?.requestFullscreen?.().catch(() => undefined); };
-  const stopPresenting = useCallback(() => { setPresenting(false); if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined); }, []);
+    setDeckPos((pos) => {
+      const st = useStore.getState();
+      const pages = st.report?.pages ?? [];
+      const next = Math.max(0, Math.min(deck.intro.length + pages.length + deck.outro.length - 1, pos + by));
+      const p = pages[next - deck.intro.length];
+      if (p && p.id !== st.pageId) st.setPage(p.id);
+      return next;
+    });
+  }, [deck.intro.length, deck.outro.length]);
+  // Autoplay moves to the next slide every 9 seconds and stops at the end.
+  useEffect(() => {
+    if (!presenting || !playing) return;
+    if (deckPos >= deckTotal - 1) { setPlaying(false); return; }
+    const t = setTimeout(() => stepPage(1), 9000);
+    return () => clearTimeout(t);
+  }, [presenting, playing, deckPos, deckTotal, stepPage]);
+  const storySlide = !presenting ? null : deckPos < deck.intro.length ? deck.intro[deckPos] : deckPos >= deck.intro.length + report.pages.length ? deck.outro[deckPos - deck.intro.length - report.pages.length] : null;
+  const startPresenting = () => { s.selectVisual(null); setDeckPos(0); setPlaying(false); setPresenting(true); void root.current?.requestFullscreen?.().catch(() => undefined); };
+  const stopPresenting = useCallback(() => { setPresenting(false); setPlaying(false); if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined); }, []);
   useEffect(() => {
     if (!presenting) return;
     const key = (e: KeyboardEvent) => {
@@ -240,6 +262,7 @@ export function Report() {
         <ThemeSwitch />
         <button className="icon-btn" aria-label="Toggle side panel" aria-pressed={side} title="Toggle side panel" onClick={() => setSide(!side)}><PanelRight size={17} /></button>
         {s.accessRole !== 'viewer' && <button className={`btn ghost ${side && sideTab === 'Design' ? 'active' : ''}`} onClick={() => { setSideTab('Design'); setSide(true); }}><Palette size={15} /> Design</button>}
+        <button className={`btn ghost ${analyst ? 'active' : ''}`} aria-pressed={analyst} onClick={() => setAnalyst(!analyst)}><BrainCircuit size={15} /> AI analyst</button>
         <button className="btn ghost" onClick={startPresenting}><MonitorPlay size={15} /> Present</button>
         <button className="btn ghost" onClick={() => setVideo(true)}><Clapperboard size={15} /> Video</button>
         <button className="btn primary" onClick={() => setExporting(true)}><Download size={15} /> Download</button>
@@ -286,6 +309,7 @@ export function Report() {
               <div>{brand.organization && <small>{brand.organization}</small>}{presenting && <h1>{report.title}<span> · {page.name}</span></h1>}</div>
             </header>
           )}
+          {analyst && !presenting && <AnalystPanel cs={cs} onClose={() => setAnalyst(false)} />}
           <nav className="pages no-print" aria-label="Report pages">
             {report.pages.map((p) => (
               renaming === p.id ? (
@@ -322,11 +346,14 @@ export function Report() {
         </main>
         {side && !presenting && <SidePanel visual={selected} cs={cs} tab={sideTab} onTab={setSideTab} onClose={() => setSide(false)} />}
       </div>
+      {storySlide && <div className="story-stage"><StorySlideView key={deckPos} slide={storySlide} index={deckPos} /></div>}
       {presenting && (
         <nav className="present-bar" aria-label="Presentation controls">
-          <button className="icon-btn" aria-label="Previous page" disabled={pageIndex <= 0} onClick={() => stepPage(-1)}><ArrowLeft size={17} /></button>
-          <span role="status">{pageIndex + 1} / {report.pages.length}</span>
-          <button className="icon-btn" aria-label="Next page" disabled={pageIndex >= report.pages.length - 1} onClick={() => stepPage(1)}><ArrowRight size={17} /></button>
+          <span className="present-progress" aria-hidden="true"><i style={{ width: `${((deckPos + 1) / Math.max(1, deckTotal)) * 100}%` }} /></span>
+          <button className="icon-btn" aria-label="Previous slide" disabled={deckPos <= 0} onClick={() => stepPage(-1)}><ArrowLeft size={17} /></button>
+          <span role="status">{deckPos + 1} / {deckTotal}</span>
+          <button className="icon-btn" aria-label="Next slide" disabled={deckPos >= deckTotal - 1} onClick={() => stepPage(1)}><ArrowRight size={17} /></button>
+          <button className="icon-btn" aria-label={playing ? 'Pause autoplay' : 'Play automatically'} aria-pressed={playing} title={playing ? 'Pause' : 'Play automatically'} onClick={() => setPlaying(!playing)}>{playing ? <Pause size={16} /> : <Play size={16} />}</button>
           <button className="btn sm" onClick={stopPresenting}><X size={14} /> Exit</button>
         </nav>
       )}

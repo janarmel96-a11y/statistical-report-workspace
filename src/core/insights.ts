@@ -123,6 +123,8 @@ export interface InsightPlan {
 }
 
 const VALUE_NAME = /(sales|revenue|amount|income|profit|cost|expense|price|budget|balance|\bfee|salary|wage|quantity|\bqty\b|\bunits?\b|hours?|minutes?|volume|weight|spend|\bvalue|\btotal)/i;
+/** Counts of mistakes, scores, and codes are not the value a report adds up, even when named "Total". */
+const NOT_A_VALUE = /(error|flag|score|index|rank|\bcode\b|\bno\.?$|number$)/i;
 const NOT_A_GROUP = /(source file|\bname\b|worker|\bstaff\b|encoder|remark|\bnotes?\b|comment|\bothers?\b|specify)/i;
 const LOCATION_ORDER = [/\bcountry\b/i, /\bregion\b/i, /\bstate\b/i, /\bprovince\b/i, /(municipal|\bcity\b|\btown\b)/i, /(barangay|\bbrgy\b|district|village|suburb)/i];
 const PEOPLE_NAME = /(patient status|civil status|marital|sector|education|occupation|employment status|religion|ethnic|nationality|classification|type of patient|patient type)/i;
@@ -157,7 +159,7 @@ export function pickPlan(en: Engine): InsightPlan {
   const realMeasures = measures.filter(varied).filter((c) => c.values.filter((v) => v !== null).length >= t.rowCount * 0.5);
   const groups = groupColumns(t);
   const groupCount = [groups.sex, groups.ageGroup, ...groups.people, ...groups.location, ...groups.other].filter(Boolean).length;
-  const caseMode = t.rowCount > 0 && (groupCount > 0 || realMeasures.length === 0) && (!realMeasures.length || (groupCount >= 6 && !realMeasures.some((c) => VALUE_NAME.test(c.name))));
+  const caseMode = t.rowCount > 0 && (groupCount > 0 || realMeasures.length === 0) && (!realMeasures.length || (groupCount >= 6 && !realMeasures.some((c) => VALUE_NAME.test(c.name) && !NOT_A_VALUE.test(c.name))));
   const date = en.firstDateColumn;
   if (caseMode) {
     const dims = [groups.sex, groups.ageGroup, ...groups.people, ...groups.location, ...groups.other].filter((x): x is string => Boolean(x));

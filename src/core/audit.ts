@@ -65,18 +65,24 @@ export function detectRules(t: DataTable, active: number[]): Rule[] {
     const dec = decimalsOf(target);
     let best: Rule | null = null;
 
+    // Rows where the result is 0 prove nothing: 0 = 0 ÷ 35 and 0 = 0 × 7 hold for almost any formula, so a mostly
+    // empty column would look like a calculation. The formula must also hold on the rows with a real result.
     const consider = (inputs: Column[], label: string, fn: (xs: number[]) => number) => {
       let n = 0;
       let ok = 0;
+      let real = 0;
+      let realOk = 0;
       for (const i of sample) {
         const y = target.values[i];
         if (typeof y !== 'number') continue;
         const xs = inputs.map((c) => c.values[i]);
         if (xs.some((x) => typeof x !== 'number')) continue;
         n++;
-        if (matches(y, fn(xs as number[]), dec)) ok++;
+        const hit = matches(y, fn(xs as number[]), dec);
+        if (hit) ok++;
+        if (y !== 0) { real++; if (hit) realOk++; }
       }
-      if (n < 5) return;
+      if (n < 5 || real < 5 || realOk / real < 0.7) return;
       const rate = ok / n;
       if (rate >= 0.7 && (!best || rate > best.rate + 1e-9)) {
         best = { target: target.name, inputs: inputs.map((c) => c.name), label, fn, rate, n };
@@ -350,7 +356,8 @@ export function runAudit(t: DataTable, inferred: InferredColumn[] = []): Finding
     for (const i of active) { const v = c.values[i]; if (typeof v === 'string') counts.set(v, (counts.get(v) ?? 0) + 1); }
     if (!counts.size) continue;
     const code = c.role === 'id' || IDENTIFIER_NAME.test(c.name);
-    const fixes = listFixes(counts, planCleanup(counts, code ? TIDY_ONLY : { ...FULL_CLEANUP, typos: !PERSON_NAME.test(c.name) }));
+    // People's names only lose stray spaces and punctuation: AQUINO and AQUIÑO can be different families.
+    const fixes = listFixes(counts, planCleanup(counts, code || PERSON_NAME.test(c.name) ? TIDY_ONLY : FULL_CLEANUP));
     const step = (list: ValueFix[], reason: string): Step => ({ op: 'replaceMany', col: c.name, pairs: list.map((f) => [f.from, f.to]), reason });
     const rows = (list: ValueFix[]) => list.reduce((n, f) => n + f.count, 0);
 

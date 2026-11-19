@@ -1,5 +1,6 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { Engine } from '../core/engine';
+import { analyzeReport, briefSections } from '../core/analyst';
 import { formatNumber, formatPct } from '../core/format';
 import { generateInsights, profileTable } from '../core/insights';
 import { queryKpi, queryRange, visualConstraints, visualTable, type ReportDoc, type Visual } from '../core/report';
@@ -84,7 +85,7 @@ export function workbookInput(ctx: ExportContext, images: ChartImage[]): Workboo
   });
   return {
     title: ctx.report.title, generatedAt: new Date(), filters: ctx.filterText, kpis: kpiList(ctx),
-    insights: generateInsights(ctx.engine, ctx.constraints, ctx.filterText), visuals, data: ctx.table, rows,
+    insights: generateInsights(ctx.engine, ctx.constraints, ctx.filterText), brief: briefSections(analyzeReport(ctx.engine, ctx.findings, ctx.constraints)), visuals, data: ctx.table, rows,
     profile: profileTable(ctx.table), findings: ctx.findings, measures: ctx.report.measures,
     trail: auditTrail(ctx.findings, [], ctx.steps ?? []),
   };

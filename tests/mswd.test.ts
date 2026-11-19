@@ -196,7 +196,7 @@ describe('MSWD workbook', () => {
     const buf = await buildMswdWorkbook(p, report, checks, DEFAULT_OPTIONS);
     expect(verifyMswdWorkbook(buf, p, report).checked).toBe(3 * 2 * 17);
     const wb = XLSX.read(buf, { type: 'array', cellFormula: true });
-    expect(wb.SheetNames).toEqual(['DASHBOARD', 'DASHBOARD SETTINGS', 'DATA CHECKS', 'MSWD PERFORMANCE', 'RSW MONTHLY TOTALS', 'MISSPELLING AUDIT', 'MASTER DATA', 'JANUARY', 'FEBRUARY', 'WORKER REPORT', 'DASHBOARD DATA']);
+    expect(wb.SheetNames).toEqual(['DASHBOARD', 'AI SUMMARY', 'DASHBOARD SETTINGS', 'DATA CHECKS', 'MSWD PERFORMANCE', 'RSW MONTHLY TOTALS', 'MISSPELLING AUDIT', 'MASTER DATA', 'JANUARY', 'FEBRUARY', 'WORKER REPORT', 'DASHBOARD DATA']);
     const perf = wb.Sheets['MSWD PERFORMANCE'];
     expect(perf.A1.v).toBe(report.title);
     expect(perf.A5.v).toBe('JANUARY 2026');
@@ -214,7 +214,7 @@ describe('MSWD workbook', () => {
     expect(wb.Sheets['DATA CHECKS'].F4.v).toBe(1);
     expect(wb.Sheets['MASTER DATA']['!ref']).toBe('A1:T95');
     expect(wb.Sheets.JANUARY['!ref']).toBe('A1:T61');
-    expect(wb.Workbook?.Sheets?.map((s) => s.Hidden)).toEqual([0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0]);
+    expect(wb.Workbook?.Sheets?.map((s) => s.Hidden)).toEqual([0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0]);
   });
   it('adds five charts and the drop-down lists', async () => {
     const { p, report, checks } = build();

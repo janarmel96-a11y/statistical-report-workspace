@@ -1,10 +1,11 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowRight, CheckCircle2, FileSpreadsheet, Info, Plus, Trash2, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowRight, BrainCircuit, CheckCircle2, FileSpreadsheet, Info, Plus, Trash2, XCircle } from 'lucide-react';
 import {
   checkReport, CLASSES, compareWithSheet, computeReport, detectColumns, FIELD_LABELS, lineValues, missingRequired, overallLabel,
   PATIENT_TYPES, planEntryCleanup, prepare, withMerges, workerChecks, workerNames, type MswdCheck, type MswdColumns, type MswdField,
 } from '../core/mswd';
+import { analyzeMswd } from '../core/mswdAnalyst';
 import { chooseSources, stackSources, type SourceTable } from '../core/mswdSources';
 import type { RawCell, RawTable } from '../core/types';
 import { ACCEPT, MAX_FILE_BYTES, readFile } from '../ingest';
@@ -100,6 +101,7 @@ export default function MswdDialog({ onClose, initial }: { onClose: () => void; 
     return compareWithSheet(grid, computeReport(raw, workerNames(raw)));
   }, [grid, result, stacked, cols]);
   const similar = useMemo(() => (result ? workerChecks(result.p, result.report.workers).filter((w) => w.similarTo) : []), [result]);
+  const brief = useMemo(() => (result ? analyzeMswd(result.p, result.report, result.checks) : null), [result]);
 
   const change = (next: Item[]) => { setItems(next); setDone(null); setError(null); setBlock(-1); };
   const addFiles = async (files: FileList | null) => {
@@ -204,6 +206,22 @@ export default function MswdDialog({ onClose, initial }: { onClose: () => void; 
               <ul className="mswd-items">{comparison.mismatches.slice(0, 8).map((m, k) => <li key={k}>{m.block} · {m.name} · {m.column}: sheet shows {m.sheet ?? 'nothing'}, data gives {n(m.computed)}</li>)}</ul>
               <span>The downloaded report uses the numbers from the data.</span>
             </section>)}
+
+        {brief && (
+          <section className="analyst open mswd-ai" aria-label="AI summary">
+            <header><span className="analyst-badge"><BrainCircuit size={16} /> AI summary</span><h2>{brief.headline}</h2></header>
+            <div className="analyst-body">
+              {brief.sections.map((s) => (
+                <div key={s.heading} className="analyst-list">
+                  <h3>{s.heading}</h3>
+                  {s.heading === 'Recommended actions'
+                    ? <ol>{s.lines.map((l, i) => <li key={i}>{l.replace(/^\d+\.\s*/, '')}</li>)}</ol>
+                    : <ul>{s.lines.map((l, i) => <li key={i}><span>{l}</span></li>)}</ul>}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="mswd-block">
           <div className="mswd-block-head">

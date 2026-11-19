@@ -5,6 +5,7 @@ import {
   overallLabel, overallTitle, PATIENT_TYPES, periodStats, philippineHolidays, workerChecks, workingDays,
   type DayEntry, type MswdCheck, type MswdReport, type Prepared,
 } from '../core/mswd';
+import { analyzeMswd } from '../core/mswdAnalyst';
 import type { RawCell } from '../core/types';
 import { safeSheetName } from './workbook';
 import { colName, StyleBook, writeXlsx, type XCell, type XRow, type XSheet, type XStyle } from './xlsxWriter';
@@ -66,6 +67,9 @@ function styles() {
     blank: A({ border: line }),
     helperHead: A({ bold: true, size: 11, fill: 'B2A1C7', align: 'center', valign: 'center' }),
     plain: A({}),
+    wrapped: A({ size: 11, wrap: true, valign: 'top' }),
+    aiTitle: A({ bold: true, size: 16, color: 'FFFFFF', fill: '4E5B92', valign: 'center' }),
+    aiHeadline: A({ bold: true, size: 13, color: '1E2C71', wrap: true, valign: 'top' }),
     bold: A({ bold: true }),
     note: A({ size: 9, color: '71798B', valign: 'center' }),
     // Dashboard
@@ -783,6 +787,32 @@ function workerSheet(x: Context): XSheet {
   return { name: NAMES.worker, rows: g.out(), merges, charts, validations, noGrid: true, cols: [4.43, 37.29, 18.71, 15.86, 10.86].map((width) => ({ width })) };
 }
 
+/* ---------- AI SUMMARY ---------- */
+
+function aiSheet(x: Context): XSheet {
+  const { st } = x;
+  const brief = analyzeMswd(x.p, x.report, x.checks);
+  const g = new Grid();
+  g.put(1, 1, 'AI SUMMARY: MSWD PERFORMANCE', st.aiTitle);
+  g.heights.set(1, 30);
+  g.put(2, 1, 'Worked out on this device from MASTER DATA. Each statement names the test or figure behind it.', st.note);
+  g.put(4, 1, brief.headline, st.aiHeadline);
+  g.heights.set(4, 36);
+  let r = 6;
+  for (const s of brief.sections) {
+    g.put(r, 1, s.heading.toUpperCase(), st.section);
+    g.heights.set(r, 20);
+    r++;
+    for (const line of s.lines) {
+      g.put(r, 1, line, st.wrapped);
+      g.heights.set(r, Math.max(18, Math.ceil(line.length / 120) * 16));
+      r++;
+    }
+    r++;
+  }
+  return { name: 'AI SUMMARY', rows: g.out(), noGrid: true, cols: [{ width: 3 }, { width: 140 }] };
+}
+
 /* ---------- Workbook ---------- */
 
 export function monthSheetNames(months: { label: string }[]): string[] {
@@ -815,7 +845,7 @@ export async function buildMswdWorkbook(p: Prepared, report: MswdReport, checks:
   x.settings.deptRange = `${q(NAMES.settings)}!$B$${ws + 2}:$C$${ws + 1 + Math.max(1, report.workers.length)}`;
 
   onProgress?.('Laying out the report sheets');
-  const used = new Set<string>(Object.values(NAMES).map((n) => n.toLowerCase()));
+  const used = new Set<string>([...Object.values(NAMES), 'AI SUMMARY'].map((n) => n.toLowerCase()));
   const months: XSheet[] = [];
   if (opts.monthSheets && p.cols.month !== undefined) {
     const names = monthSheetNames(report.months);
@@ -828,7 +858,7 @@ export async function buildMswdWorkbook(p: Prepared, report: MswdReport, checks:
     });
   }
   const sheets: XSheet[] = [
-    dashboardSheet(x), settingsSheet(x), checksSheet(x), performanceSheet(x), totalsSheet(x), auditSheet(x),
+    dashboardSheet(x), aiSheet(x), settingsSheet(x), checksSheet(x), performanceSheet(x), totalsSheet(x), auditSheet(x),
     dataSheet(NAMES.master, p.headers, p.rows, st), ...months, workerSheet(x), dashboardDataSheet(x),
   ];
   return writeXlsx(sheets, st.book, onProgress);

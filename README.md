@@ -8,8 +8,10 @@ Turn Excel, CSV, JSON, and PDF files into corrected, interactive statistical rep
 
 | Area | Features |
 |---|---|
-| **Import** | Drag and drop for `.xlsx`, `.xls`, `.csv`, `.json`, and `.pdf`. Sheet and table picker, PDF table detection, OCR for scanned PDFs, stacking and matching of several tables. |
+| **Import** | One drop zone for `.xlsx`, `.xls`, `.xlsb`, `.ods`, `.csv`, `.json`, `.pdf`, and tables inside Word (`.docx`), PowerPoint (`.pptx`), and saved web pages (`.html`). PDF table detection and OCR for scanned PDFs. Files with the same headers are combined automatically; MSWD patient responses open the MSWD performance report. |
 | **Video studio** | Turns a report into an MP4 with scenes, a written script, captions, music, animated presenter, transitions, recorded voice, and landscape, portrait, or square formats. |
+| **AI analyst** | Opens with every automatic report: a written summary, a significance-tested trend (Mann-Kendall), a three-period forecast with a 95% range and backtest error, the strongest drivers (ANOVA, chi-square), unusual periods, risks, recommended actions, and a confidence level. Also added to Excel (AI Summary sheet) and PowerPoint. Worked out on the device; no data leaves it. |
+| **Animated presentations** | Present mode opens with AI story slides (title, summary, key figures that count up, forecast chart that draws itself, findings), then the report pages, then the AI's recommended actions, with autoplay and a progress bar. |
 | **Report assistant** | A built-in assistant answers questions, explains changes, creates charts, and suggests improvements. It runs on the device and learns only from the current report. |
 | **MSWD performance report** | Turns the NEW and OLD patient form responses, monthly files, or an existing MSWD workbook into the MSWD performance workbook: DASHBOARD, DATA CHECKS, MSWD PERFORMANCE (patients catered per RSW for each month and overall, by type of patient, classification, place-name misspellings, and new or old patient), WORKER REPORT, MASTER DATA, and one sheet per month. Every number is a live Excel formula, saved with its value, and the finished file is reopened and checked before download. |
 | **Combine files** | Stacks two or more files, lines up matching headers, keeps columns found in only one file, and checks every value in the finished workbook. |
@@ -86,6 +88,8 @@ To regenerate the reference answers, install `numpy`, `scipy`, and `pandas`, the
 - Very large reports depend on the memory available to the browser.
 - Excel limits a sheet to 1,048,576 rows and Google Sheets limits a file to 10 million cells. Larger downloads are cut off and say so in the file.
 - Complex PDF layouts and poor scans can need manual review. OCR reads English text.
+- Charts and pictures inside Word and PowerPoint files cannot be read; only their tables are.
+- The AI analyst and MSWD AI summary are calculations with stated tests, not a chatbot. Their forecasts need at least 6 complete periods.
 - The audit assumes a calculated column's inputs are right when a row disagrees with the formula that the rest of the column follows.
 - The interface is available in English.
 - Exported videos include captions, music, and voices you record. The read-aloud voice plays only in the preview, because browsers cannot save it into a file.

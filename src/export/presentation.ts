@@ -1,8 +1,11 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import JSZip from 'jszip';
 import type PptxTypes from 'pptxgenjs';
+import { analyzeReport, briefText } from '../core/analyst';
 import { suggestImprovements, emptyMemory } from '../core/assistant';
 import { buildStory, type StoryScene } from '../core/story';
+import { forecastOption } from '../ui/analystChart';
+import { renderChartImage } from '../ui/EChart';
 import { chartImages, download, safeFileName, type ExportContext, type Progress } from './reportExports';
 
 /**
@@ -98,6 +101,32 @@ export async function exportPptx(ctx: ExportContext, progress: Progress) {
     bullets.forEach((b, i) => s.addText(b, { shape: p.ShapeType.roundRect, rectRadius: 0.06, x, y: y + i * (h + 0.14), w, h, fill: { color: SOFT }, line: { color: SOFT, width: 0 }, fontFace: FONT, fontSize: 14, color: INK, margin: 10, valign: 'middle', fit: 'shrink' }));
   };
 
+  // The AI analyst's slides follow the title: summary, forecast, and recommended actions.
+  const brief = analyzeReport(ctx.engine, ctx.findings, ctx.constraints);
+  const notes = briefText(brief);
+  const aiSlides = () => {
+    const sum = p.addSlide();
+    sum.background = { color: 'FFFFFF' };
+    sum.addNotes(notes);
+    header(sum, { id: 'ai', kind: 'findings', kicker: 'AI analyst', title: brief.headline, bullets: [], narration: '' });
+    points(sum, brief.summary.slice(0, 4), 0.6, 1.75, 12.1, 0.95);
+    sum.addText(`Confidence: ${brief.confidence.level}. ${brief.confidence.reason}`, { x: 0.6, y: 6.55, w: 12.1, h: 0.4, fontFace: FONT, fontSize: 11, color: SUB, margin: 0 });
+    if (brief.forecast) {
+      const fs = p.addSlide();
+      fs.background = { color: 'FFFFFF' };
+      fs.addNotes(brief.forecast.text);
+      header(fs, { id: 'fc', kind: 'chart', kicker: 'AI forecast', title: brief.forecast.text.split('. ')[0], bullets: [], narration: '' });
+      const img = renderChartImage(forecastOption(brief, false, true));
+      fs.addImage({ data: img.dataUrl, x: 0.6, y: 1.6, w: 8.1, h: 8.1 * (img.height / img.width), altText: brief.forecast.text });
+      points(fs, [`Method: ${brief.forecast.method}`, brief.forecast.mape !== null ? `Backtest error about ${(brief.forecast.mape * 100).toFixed(0)}%` : 'Range shows 95% of likely values', ...(brief.trend ? [brief.trend.direction === 'flat' ? 'No significant trend' : `Significant ${brief.trend.direction}ward trend`] : [])], 9, 1.75, 3.73, 1.15);
+    }
+    const act = p.addSlide();
+    act.background = { color: 'FFFFFF' };
+    act.addNotes(notes);
+    header(act, { id: 'act', kind: 'findings', kicker: 'AI recommendations', title: 'What to do next', bullets: [], narration: '' });
+    points(act, [...brief.risks.filter((r) => r.level !== 'low').slice(0, 2).map((r) => `Watch: ${r.text}`), ...brief.actions].slice(0, 5), 0.6, 1.75, 12.1, 0.82);
+  };
+
   for (const scene of scenes) {
     const s = p.addSlide();
     s.addNotes(scene.narration);
@@ -106,6 +135,7 @@ export async function exportPptx(ctx: ExportContext, progress: Progress) {
       s.addText(scene.kicker.toUpperCase(), { x: 0.9, y: 2.1, w: 11.5, h: 0.4, fontFace: FONT, fontSize: 14, bold: true, color: '86B6EF', charSpacing: 2, margin: 0 });
       s.addText(scene.title, { x: 0.9, y: 2.55, w: 11.5, h: 1.4, fontFace: FONT, fontSize: 44, bold: true, color: 'FFFFFF', margin: 0, fit: 'shrink', valign: 'top' });
       if (scene.bullets[0]) s.addText(scene.bullets[0], { x: 0.9, y: 4.05, w: 11.5, h: 0.8, fontFace: FONT, fontSize: 18, color: 'CDE2FB', margin: 0, valign: 'top' });
+      if (scene.kind === 'title') aiSlides();
       continue;
     }
     s.background = { color: 'FFFFFF' };

@@ -15,7 +15,7 @@ const SAMPLES = [
 ];
 
 const STEPS = [
-  { icon: FileUp, title: 'Add a file', text: 'Excel, CSV, JSON, or PDF tables.' },
+  { icon: FileUp, title: 'Add a file', text: 'Tables from Excel, CSV, JSON, PDF, Word, PowerPoint, or web pages.' },
   { icon: ListChecks, title: 'Errors get corrected', text: 'Wrong totals, bad formulas, duplicates, and mistyped numbers are found and fixed.' },
   { icon: BarChart3, title: 'Explore the report', text: 'Charts, findings, filters, and drill-down are built for you.' },
   { icon: FileSpreadsheet, title: 'Download it', text: 'Excel, Google Sheets, PDF, PowerPoint, PNG, or CSV.' },
@@ -68,7 +68,7 @@ export function Home() {
           >
             <span className="drop-icon"><Upload size={26} /></span>
             <h2>Drop your file here</h2>
-            <p>Excel (.xlsx, .xls), CSV, JSON, or PDF, up to 200 MB</p>
+            <p>Excel, CSV, JSON, PDF, Word, PowerPoint, OpenDocument, or web page reports, up to 200 MB</p>
             <p className="drop-auto">Files with the same headers are combined. MSWD patient responses open the MSWD performance report.</p>
             <button className="btn primary lg" onClick={() => input.current?.click()}>Choose a file</button>
             <input ref={input} type="file" accept={ACCEPT} multiple hidden aria-label="Choose data files" onChange={(e) => { onFiles(e.target.files); e.target.value = ''; }} />

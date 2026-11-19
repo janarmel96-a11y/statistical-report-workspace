@@ -4,7 +4,7 @@ import type { Progress } from './pdf';
 
 export const MAX_FILE_BYTES = 200 * 1024 * 1024;
 
-export const ACCEPT = '.xlsx,.xls,.xlsm,.csv,.tsv,.txt,.json,.ndjson,.pdf,.statsecure';
+export const ACCEPT = '.xlsx,.xls,.xlsm,.xlsb,.ods,.csv,.tsv,.txt,.json,.ndjson,.pdf,.docx,.pptx,.htm,.html,.statsecure';
 
 export class ImportError extends Error {}
 
@@ -36,8 +36,14 @@ export async function readFileWithGrids(file: File, onProgress: Progress, keep: 
     if (sig === 'pdf') {
       const { readPdf } = await import('./pdf');
       tables = await readPdf(buf, file.name, onProgress);
+    } else if (sig === 'zip' && (['docx', 'pptx'].includes(ext) || !['xlsx', 'xlsm', 'xlsb', 'ods'].includes(ext))) {
+      // Word and PowerPoint reports are zip files too; their tables are read from the document itself.
+      const { isOfficeDocument, readOfficeTables } = await import('./office');
+      tables = await isOfficeDocument(buf) ? await readOfficeTables(buf, file.name) : readWorkbook(buf, file.name);
     } else if (sig === 'zip' || sig === 'ole') {
       tables = readWorkbook(buf, file.name);
+    } else if (['htm', 'html'].includes(ext)) {
+      tables = readWorkbook(buf, file.name); // Tables of a saved web page
     } else if (ext === 'json' || ext === 'ndjson') {
       tables = readJson(decodeText(buf), file.name);
     } else if (['csv', 'tsv', 'txt'].includes(ext)) {
@@ -45,7 +51,7 @@ export async function readFileWithGrids(file: File, onProgress: Progress, keep: 
     } else if (['xls', 'xlsx', 'xlsm'].includes(ext)) {
       tables = readWorkbook(buf, file.name); // Older spreadsheet XML or HTML saved as .xls
     } else {
-      throw new ImportError(`${file.name} is not a supported file. Use Excel, CSV, JSON, or PDF.`);
+      throw new ImportError(`${file.name} is not a supported file. Use Excel, OpenDocument, CSV, JSON, PDF, Word, PowerPoint, or a web page.`);
     }
   } catch (e) {
     if (e instanceof ImportError) throw e;
@@ -54,6 +60,7 @@ export async function readFileWithGrids(file: File, onProgress: Progress, keep: 
   if (!tables.length) {
     throw new ImportError(sig === 'pdf'
       ? `No tables were found in ${file.name}. The PDF may contain only paragraphs or images of charts.`
+      : ['docx', 'pptx'].includes(ext) ? `No tables were found in ${file.name}. Charts and pictures cannot be read; add the numbers as a table.`
       : `No table of data was found in ${file.name}.`);
   }
   return { tables, grids };
