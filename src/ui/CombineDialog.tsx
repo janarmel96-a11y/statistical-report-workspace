@@ -1,7 +1,7 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowRight, CheckCircle2, Download, FileSpreadsheet, Plus, Trash2, Unlink } from 'lucide-react';
-import { canMerge, checkCombined, combineSources, matchColumns, mergeColumns, separateColumn, toRawTable, type CombineColumn, type CombineOptions, type CombineSource } from '../core/combine';
+import { AlertTriangle, ArrowRight, CheckCircle2, Download, FileSpreadsheet, Layers, Plus, Trash2, Unlink } from 'lucide-react';
+import { canMerge, checkCombined, combineSources, findOverlaps, matchColumns, mergeColumns, separateColumn, toRawTable, type CombineColumn, type CombineOptions, type CombineSource } from '../core/combine';
 import { nameTaken } from '../core/names';
 import type { RawTable } from '../core/types';
 import { ACCEPT, readFile } from '../ingest';
@@ -9,10 +9,12 @@ import { useStore } from '../state/store';
 import { Modal } from './common';
 import { NameInput } from './NameInput';
 
-interface Item { key: string; fileName: string; label: string; tables: RawTable[]; table: number }
+/** One added file. `use` lists the sheets or tables of that file that are combined. */
+interface Item { key: string; fileName: string; label: string; tables: RawTable[]; use: number[] }
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const plainName = (f: string) => f.replace(/\.[^.]+$/, '');
+const shapeOf = (t: RawTable) => t.headers.map((h) => String(h ?? '').trim().toLowerCase()).sort().join('\u0001');
 
 export default function CombineDialog({ onClose }: { onClose: () => void }) {
   const confirmImport = useStore((s) => s.confirmImport);
@@ -24,15 +26,19 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
   const [removeDuplicates, setRemoveDuplicates] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
-  const sources = useMemo<CombineSource[]>(() => items.map((it) => {
-    const t = it.tables[it.table];
-    return { name: it.label, headers: t.headers.map((h) => String(h ?? '').trim()), rows: t.rows };
-  }), [items]);
+  // Every chosen sheet is its own source, so a workbook with monthly sheets can be stacked too.
+  const parts = useMemo(() => items.flatMap((it) => it.use.map((k) => ({ item: it, k, label: it.use.length > 1 ? `${it.label} · ${it.tables[k].name}` : it.label }))), [items]);
+  const sources = useMemo<CombineSource[]>(() => parts.map(({ item, k, label }) => {
+    const t = item.tables[k];
+    return { name: label, headers: t.headers.map((h) => String(h ?? '').trim()), rows: t.rows };
+  }), [parts]);
   const matched = useMemo(() => matchColumns(sources), [sources]);
+  const overlaps = useMemo(() => findOverlaps(sources), [sources]);
   const columns = edited ?? matched;
   const opts: CombineOptions = { addSource, sourceHeader, removeDuplicates };
   const result = useMemo(() => (sources.length >= 2 ? combineSources(sources, columns, opts) : null), [sources, columns, addSource, sourceHeader, removeDuplicates]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -47,23 +53,30 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
     setItems((list) => list.map((x) => (x.key === key ? { ...x, label } : x)));
     return true;
   };
+  const setUse = (key: string, use: number[]) => change(items.map((x) => (x.key === key ? { ...x, use } : x)));
+  const leaveOut = (list: typeof overlaps) => {
+    const drop = new Set(list.map((o) => `${parts[o.table].item.key}:${parts[o.table].k}`));
+    change(items.map((it) => ({ ...it, use: it.use.filter((k) => !drop.has(`${it.key}:${k}`)) })).filter((it) => it.use.length));
+  };
 
   const addFiles = async (list: FileList | null) => {
     if (!list?.length) return;
-    setError(null);
+    setError(null); setInfo(null);
     const next = [...items];
+    const again: string[] = [];
     for (const f of [...list]) {
-      const key = `${f.name}:${f.size}`;
-      if (next.some((x) => x.key === key)) continue;
+      const key = `${f.name}:${f.size}:${f.lastModified}`;
+      if (next.some((x) => x.key === key)) { again.push(f.name); continue; }
       try {
         setBusy(`Reading ${f.name}`);
         const tables = await readFile(f, (message) => setBusy(message));
         const largest = tables.reduce((best, t, i) => (t.rows.length > tables[best].rows.length ? i : best), 0);
         let label = plainName(f.name);
         for (let n = 2; nameTaken(label, next.map((x) => x.label)); n++) label = `${plainName(f.name)} (${n})`;
-        next.push({ key, fileName: f.name, label, tables, table: largest });
+        next.push({ key, fileName: f.name, label, tables, use: [largest] });
       } catch (e) { setError((e as Error).message); }
     }
+    if (again.length) setInfo(`${again.join(', ')} ${again.length === 1 ? 'is' : 'are'} already in the list. To combine a copy, save it under another name first.`);
     setBusy(null);
     change(next);
   };
@@ -86,7 +99,7 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
         combined.verifyCombinedWorkbook(buf, result);
         download(buf, `${safeFileName(outputName)}.xlsx`, XLSX_MIME);
       }
-      setDone(`Combined ${result.rows.length.toLocaleString()} rows from ${sources.length} files. Every value was checked.`);
+      setDone(`Combined ${result.rows.length.toLocaleString()} rows from ${sources.length} ${sources.length === 1 ? 'table' : 'tables'}. Every value was checked.`);
     } catch (e) { setError(`${(e as Error).message} Nothing was downloaded.`); }
     setBusy(null);
   };
@@ -100,25 +113,52 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
       <button className="btn primary" disabled={Boolean(busy)} onClick={() => void finish('excel')}><FileSpreadsheet size={15} /> Download Excel</button>
     </> : undefined}>
       <div className={`combine-drop ${drag ? 'over' : ''}`} onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={(e) => { e.preventDefault(); setDrag(false); void addFiles(e.dataTransfer.files); }}>
-        <p>Add two or more files. Rows are stacked and columns are lined up by header.</p>
+        <p>Add two or more files, or one workbook with several sheets. Rows are stacked and columns are lined up by header.</p>
         <button className="btn sm" disabled={Boolean(busy)} onClick={() => input.current?.click()}><Plus size={14} /> Add files</button>
         <input ref={input} type="file" multiple hidden accept={ACCEPT} aria-label="Choose files to combine" onChange={(e) => { void addFiles(e.target.files); e.target.value = ''; }} />
       </div>
 
       {items.length > 0 && (
         <ul className="combine-files">
-          {items.map((it, i) => (
-            <li key={it.key}>
-              <FileSpreadsheet size={17} />
-              <span>
-                <NameInput className="name-plain" label={`File ${i + 1} name`} value={it.label} onCommit={(label) => renameFile(it.key, label)} />
-                <small title={it.fileName}>{it.fileName} · {it.tables[it.table].rows.length.toLocaleString()} rows · {it.tables[it.table].headers.length} columns</small>
-              </span>
-              {it.tables.length > 1 && <select aria-label={`Table to use from ${it.fileName}`} value={it.table} onChange={(e) => change(items.map((x, k) => (k === i ? { ...x, table: Number(e.target.value) } : x)))}>{it.tables.map((t, k) => <option key={k} value={k}>{t.name}</option>)}</select>}
-              <button className="icon-btn sm" aria-label={`Remove ${it.fileName}`} onClick={() => change(items.filter((_, k) => k !== i))}><Trash2 size={14} /></button>
-            </li>
-          ))}
+          {items.map((it, i) => {
+            const main = it.tables[it.use[0]];
+            const twins = it.tables.map((t, k) => ({ t, k })).filter(({ t, k }) => !it.use.includes(k) && shapeOf(t) === shapeOf(main));
+            return (
+              <li key={it.key}>
+                <FileSpreadsheet size={17} />
+                <span>
+                  <NameInput className="name-plain" label={`File ${i + 1} name`} value={it.label} onCommit={(label) => renameFile(it.key, label)} />
+                  <small title={it.fileName}>{it.fileName} · {it.use.reduce((n, k) => n + it.tables[k].rows.length, 0).toLocaleString()} rows · {main.headers.length} columns{it.use.length > 1 ? ` · ${it.use.length} sheets` : ''}</small>
+                  {it.tables.length > 1 && (
+                    <details className="combine-sheets">
+                      <summary>{it.use.length === 1 ? `Sheet: ${main.name}` : `${it.use.length} of ${it.tables.length} sheets`}</summary>
+                      <div>
+                        {it.tables.map((t, k) => (
+                          <label key={k}><input type="checkbox" checked={it.use.includes(k)} disabled={it.use.length === 1 && it.use.includes(k)} onChange={(e) => setUse(it.key, e.target.checked ? [...it.use, k].sort((a, b) => a - b) : it.use.filter((x) => x !== k))} /> {t.name} <small>{t.rows.length.toLocaleString()} rows</small></label>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </span>
+                {twins.length > 0 && <button className="btn sm" title="Add the other sheets that have the same headers" onClick={() => setUse(it.key, [...it.use, ...twins.map((x) => x.k)].sort((a, b) => a - b))}><Layers size={13} /> Add {twins.length} matching {twins.length === 1 ? 'sheet' : 'sheets'}</button>}
+                <button className="icon-btn sm" aria-label={`Remove ${it.fileName}`} onClick={() => change(items.filter((_, k) => k !== i))}><Trash2 size={14} /></button>
+              </li>
+            );
+          })}
         </ul>
+      )}
+
+      {overlaps.length > 0 && (
+        <section className="combine-review" role="alert">
+          <h3><AlertTriangle size={15} /> Some rows would be counted twice</h3>
+          <ul>{overlaps.map((o) => (
+            <li key={o.table}>
+              <span><b>{sources[o.table].name}</b><small>{o.same ? 'Has exactly the same rows as' : 'Every row is already in'} {sources[o.within].name}</small></span>
+              <button className="btn sm" onClick={() => leaveOut([o])}>Leave it out</button>
+            </li>
+          ))}</ul>
+          <p className="hint">{overlaps.length > 1 && <button className="link" onClick={() => leaveOut(overlaps)}>Leave out all {overlaps.length}</button>}{overlaps.length > 1 ? ' or ' : ''}switch on <b>Remove rows that are exactly the same</b> below.</p>
+        </section>
       )}
 
       {result && <>
@@ -170,9 +210,10 @@ export default function CombineDialog({ onClose }: { onClose: () => void }) {
         </fieldset>
       </>}
 
-      {items.length === 1 && <p className="hint">Add at least one more file to combine.</p>}
+      {sources.length === 1 && <p className="hint">Add at least one more file, or choose another sheet from this workbook.</p>}
       <div role="status" aria-live="polite">
         {busy && <p className="notice"><span className="spinner sm" /> {busy}</p>}
+        {info && <p className="notice warn">{info}</p>}
         {error && <p className="notice bad">{error}</p>}
         {done && <p className="notice good"><CheckCircle2 size={16} /> {done}</p>}
       </div>

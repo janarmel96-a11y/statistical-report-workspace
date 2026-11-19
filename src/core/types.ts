@@ -78,6 +78,7 @@ export type Step =
   | { op: 'outliers'; col: string; method: 'remove' | 'cap' }
   | { op: 'rule'; col: string; rule: ValidationRule; action: 'exclude' | 'blank' }
   | { op: 'replace'; col: string; from: Cell; to: Cell }
+  | { op: 'replaceMany'; col: string; pairs: [Cell, Cell][]; reason: string }
   | { op: 'excludeRows'; rows: number[]; reason: string }
   | { op: 'setCells'; col: string; changes: { row: number; value: Cell }[]; reason: string };
 

@@ -1,5 +1,5 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
-import { matchColumns } from './combine';
+import { findOverlaps, matchColumns } from './combine';
 import { uniqueHeaders } from './parse';
 import type { Finding, RawTable } from './types';
 
@@ -9,6 +9,8 @@ export interface AutoPick {
   tables: RawTable[];
   combine: { mode: 'single' | 'append' };
   skipped: string[];
+  /** Tables left out because another table already holds all of their rows. */
+  repeated: string[];
 }
 
 const sizeOf = (t: RawTable) => t.rows.length * t.headers.length * (t.confidence ?? 1);
@@ -34,11 +36,18 @@ export function chooseTables(found: RawTable[]): AutoPick {
     const both = matchColumns([{ name: 'a', headers: anchor.headers, rows: [] }, { name: 'b', headers: t.headers, rows: [] }]).filter((c) => c.map.every((p) => p !== null)).length;
     return both / Math.min(anchor.headers.length, t.headers.length) >= 0.6;
   };
-  const best = found.filter(related);
+  const candidates = found.filter(related);
+  // A master sheet next to its monthly sheets, or the same file twice, would count every row twice.
+  const overlaps = findOverlaps(candidates.map((t) => ({ name: t.name, headers: t.headers.map((h) => String(h ?? '').trim()), rows: t.rows })));
+  const inside = new Set(overlaps.map((o) => o.table));
+  const best = candidates.filter((_, i) => !inside.has(i));
+  const labels = tableLabels(candidates);
+  const repeated = overlaps.map((o) => `${labels[o.table]} (${o.same ? 'same rows as' : 'already inside'} ${labels[o.within]})`);
   return {
     tables: best,
     combine: { mode: best.length > 1 ? 'append' : 'single' },
-    skipped: found.filter((t) => !best.includes(t)).map((t) => t.name),
+    skipped: found.filter((t) => !candidates.includes(t)).map((t) => t.name),
+    repeated,
   };
 }
 
@@ -56,6 +65,7 @@ export interface AutoSummary {
   labelsFixed: number;
   review: number;
   skipped: string[];
+  repeated: string[];
   note?: string;
 }
 
@@ -70,6 +80,7 @@ export function summarizeAuto(pick: AutoPick, findings: Finding[], disabled: str
     labelsFixed: applied.filter((f) => f.kind === 'label-variants').reduce((n, f) => n + f.count, 0),
     review: findings.filter((f) => !f.auto && f.severity !== 'info').length,
     skipped: pick.skipped,
+    repeated: pick.repeated,
     note: pick.tables.find((t) => t.note)?.note,
   };
 }

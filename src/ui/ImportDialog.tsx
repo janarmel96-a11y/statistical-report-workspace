@@ -1,6 +1,7 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useMemo, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { findOverlaps } from '../core/combine';
 import { nameTaken } from '../core/names';
 import { uniqueHeaders } from '../core/parse';
 import type { RawTable } from '../core/types';
@@ -15,8 +16,10 @@ export function ImportDialog() {
   const pending = useStore((s) => s.pending)!;
   const cancel = useStore((s) => s.cancelImport);
   const confirm = useStore((s) => s.confirmImport);
-  const [chosen, setChosen] = useState<number[]>([0]);
-  const [preview, setPreview] = useState(0);
+  // The largest table is usually the data. Titles, notes, and summary blocks are smaller.
+  const [largest] = useState(() => pending.reduce((best, t, i) => (t.rows.length * t.headers.length > pending[best].rows.length * pending[best].headers.length ? i : best), 0));
+  const [chosen, setChosen] = useState<number[]>([largest]);
+  const [preview, setPreview] = useState(largest);
   const [mode, setMode] = useState<'append' | 'join'>('append');
   const [names, setNames] = useState(() => pending.map((p) => p.name));
   const [reportName, setReportName] = useState<string | null>(null);
@@ -27,6 +30,8 @@ export function ImportDialog() {
     const sets = tables.map((t) => new Set(uniqueHeaders(t.headers)));
     return [...sets[0]].filter((h) => sets.every((s) => s.has(h)));
   }, [tables]);
+  // Hashing rows is the slow part, so it runs only when the chosen tables change.
+  const overlaps = useMemo(() => (chosen.length < 2 ? [] : findOverlaps(chosen.map((i) => ({ name: pending[i].name, headers: pending[i].headers.map((h) => String(h ?? '').trim()), rows: pending[i].rows })))), [chosen, pending]);
   const [left, setLeft] = useState('');
   const [right, setRight] = useState('');
   const leftCols = tables[0] ? uniqueHeaders(tables[0].headers) : [];
@@ -75,6 +80,13 @@ export function ImportDialog() {
         </div>
       </div>
       {nameError && <p className="notice bad" role="alert">{nameError}</p>}
+      {mode === 'append' && overlaps.length > 0 && (
+        <div className="notice warn stack" role="alert">
+          <p><AlertTriangle size={15} /> Stacking these tables would count some rows twice.</p>
+          <ul>{overlaps.map((o) => <li key={o.table}>{names[chosen[o.table]]} {o.same ? 'has exactly the same rows as' : 'is already inside'} {names[chosen[o.within]]}.</li>)}</ul>
+          <button className="btn sm" onClick={() => setChosen((c) => c.filter((_, k) => !overlaps.some((o) => o.table === k)))}>Leave out the repeated {overlaps.length === 1 ? 'table' : 'tables'}</button>
+        </div>
+      )}
       {tables.length > 1 && <label className="field compact report-name">Report name <NameInput label="Report name" value={reportName ?? defaultName} onCommit={setReportName} /></label>}
       {tables.length > 1 && (
         <fieldset className="combine">

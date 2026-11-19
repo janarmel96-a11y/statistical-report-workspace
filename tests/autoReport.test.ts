@@ -6,8 +6,9 @@ import { inferTable } from '../src/core/parse';
 import type { RawTable } from '../src/core/types';
 import { readCsv } from '../src/ingest/readers';
 
-const table = (name: string, headers: string[], rows: number, confidence?: number): RawTable => ({
-  name, source: 's', headers, rows: Array.from({ length: rows }, (_, i) => headers.map(() => i)), confidence,
+/** Rows hold different values in each table, so two tables never look like copies of each other by accident. */
+const table = (name: string, headers: string[], rows: number, confidence?: number, offset = name.length * 1000 + name.charCodeAt(0)): RawTable => ({
+  name, source: 's', headers, rows: Array.from({ length: rows }, (_, i) => headers.map(() => offset + i)), confidence,
 });
 
 describe('automatic table choice', () => {
@@ -26,6 +27,19 @@ describe('automatic table choice', () => {
     expect(pick.combine.mode).toBe('append');
     expect(pick.tables.map((t) => t.name)).toEqual(['Jan', 'Feb']);
     expect(pick.skipped).toEqual(['Notes']);
+  });
+  it('leaves out monthly sheets whose rows are already in the master sheet', () => {
+    const stamp = (m: number, i: number) => ({ date: Date.UTC(2026, m, 1 + (i % 27), 9, i % 60, i % 59) + i });
+    const sheet = (name: string, months: number[]): RawTable => ({
+      name, source: 's', headers: ['Timestamp', 'Worker', 'Date and Time'],
+      rows: months.flatMap((m) => Array.from({ length: 40 }, (_, i) => [stamp(m, i), `W${i % 4}`, null])),
+    });
+    const jan = sheet('JANUARY', [0]);
+    // The monthly copy had its "Date and Time" filled in afterwards, so no row is an exact copy any more.
+    jan.rows = jan.rows.map((r) => [r[0], r[1], r[0]]);
+    const pick = chooseTables([sheet('MASTER DATA', [0, 1]), jan, sheet('FEBRUARY', [1])]);
+    expect(pick.tables.map((t) => t.name)).toEqual(['MASTER DATA']);
+    expect(pick.repeated).toEqual(['JANUARY (already inside MASTER DATA)', 'FEBRUARY (already inside MASTER DATA)']);
   });
   it('prefers a clearly read table over a slightly larger unreliable one', () => {
     const pick = chooseTables([table('Blurry', ['A', 'B'], 20, 0.4), table('Clear', ['C', 'D'], 15, 0.98)]);

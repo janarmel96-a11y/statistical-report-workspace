@@ -9,9 +9,15 @@ const ERROR_CODES: Record<number, string> = { 0: '#NULL!', 7: '#DIV/0!', 15: '#V
 /* ---------- Excel ---------- */
 
 export function readWorkbook(buf: ArrayBuffer | Uint8Array, source: string): RawTable[] {
+  return readWorkbookWithGrids(buf, source, () => false).tables;
+}
+
+/** Reads every table, and also keeps the exact cell layout of the sheets that `keep` selects. */
+export function readWorkbookWithGrids(buf: ArrayBuffer | Uint8Array, source: string, keep: (sheetName: string) => boolean): { tables: RawTable[]; grids: Map<string, RawCell[][]> } {
   const wb = XLSX.read(buf, { type: 'array', cellNF: true, cellDates: false, cellFormula: false, dense: false });
   const epoch = wb.Workbook?.WBProps?.date1904 ? 24107 : 25569;
   const out: RawTable[] = [];
+  const grids = new Map<string, RawCell[][]>();
   for (const sheetName of wb.SheetNames) {
     const sheet = wb.Sheets[sheetName];
     if (!sheet?.['!ref']) continue;
@@ -49,9 +55,10 @@ export function readWorkbook(buf: ArrayBuffer | Uint8Array, source: string): Raw
     }
     const hints: (ColumnHint | undefined)[] = hintVotes.map((v, i) =>
       v.get('percent') ? { format: 'percent' } : v.get('currency') ? { format: 'currency', currency: currencyVotes[i] } : undefined);
+    if (keep(sheetName)) grids.set(sheetName, grid);
     out.push(...gridToTables(grid, sheetName, source, hints));
   }
-  return out;
+  return { tables: out, grids };
 }
 
 /* ---------- CSV ---------- */

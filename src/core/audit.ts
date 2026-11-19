@@ -1,8 +1,11 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
+import { FULL_CLEANUP, listFixes, planCleanup, TIDY_ONLY, type ValueFix } from './cleanup';
 import { AGE_NAME, IDENTIFIER_NAME, PERSON_NAME, type InferredColumn } from './parse';
 import { getColumn } from './recipe';
 import type { Cell, CellChange, Column, DataTable, Finding, Step } from './types';
 import { sum } from './stats';
+
+export { isLikelyTypo } from './typos';
 
 /**
  * Computation audit: finds calculation errors already inside an uploaded report and proposes fixes.
@@ -102,25 +105,6 @@ export function detectRules(t: DataTable, active: number[]): Rule[] {
     if (best) rules.push(best);
   }
   return rules;
-}
-
-/** True for one missing, extra, or swapped letter. A replaced letter is not enough, because Bago and Bato are different places. */
-function oneTypo(a: string, b: string) {
-  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
-  if (short.length < 5 || long.length - short.length > 1 || a === b) return false;
-  if (/\d/.test(long) || /^[ivxlcdm]+$/.test(short) || /^[ivxlcdm]+$/.test(long)) return false;
-  let i = 0;
-  while (i < short.length && short[i] === long[i]) i++;
-  if (long.length > short.length) return long.slice(i + 1) === short.slice(i);
-  return short[i] === long[i + 1] && short[i + 1] === long[i] && short.slice(i + 2) === long.slice(i + 2);
-}
-
-/** Labels match when every word is the same except one word with a single typing slip. */
-export function isLikelyTypo(a: string, b: string) {
-  const [x, y] = [a.split(' '), b.split(' ')];
-  if (x.length !== y.length) return false;
-  const differ = x.flatMap((w, i) => (w === y[i] ? [] : [i]));
-  return differ.length === 1 && oneTypo(x[differ[0]], y[differ[0]]);
 }
 
 function isTotalRow(i: number, labels: Column[]): string | null {
@@ -360,53 +344,41 @@ export function runAudit(t: DataTable, inferred: InferredColumn[] = []): Finding
     }
   }
 
-  /* 5. Inconsistent labels --------------------------------------------------------------------- */
-  for (const c of t.columns.filter((x) => x.type === 'category')) {
+  /* 5. Wrongly typed entries: stray spaces and punctuation, letter case, spelling variants, typos -- */
+  for (const c of t.columns.filter((x) => x.type === 'category' || x.type === 'text')) {
     const counts = new Map<string, number>();
     for (const i of active) { const v = c.values[i]; if (typeof v === 'string') counts.set(v, (counts.get(v) ?? 0) + 1); }
-    const groups = new Map<string, string[]>();
-    counts.forEach((_, v) => {
-      const k = v.toLowerCase().replace(/\s+/g, ' ').trim();
-      groups.set(k, [...(groups.get(k) ?? []), v]);
-    });
-    const steps: Step[] = [];
-    let affected = 0;
-    const eg: string[] = [];
-    groups.forEach((vs) => {
-      if (vs.length < 2) return;
-      const main = [...vs].sort((a, b) => counts.get(b)! - counts.get(a)!)[0];
-      vs.filter((v) => v !== main).forEach((v) => {
-        steps.push({ op: 'replace', col: c.name, from: v, to: main });
-        affected += counts.get(v)!;
-        if (eg.length < 3) eg.push(`"${v}" → "${main}"`);
-      });
-    });
-    if (steps.length) {
+    if (!counts.size) continue;
+    const code = c.role === 'id' || IDENTIFIER_NAME.test(c.name);
+    const fixes = listFixes(counts, planCleanup(counts, code ? TIDY_ONLY : { ...FULL_CLEANUP, typos: !PERSON_NAME.test(c.name) }));
+    const step = (list: ValueFix[], reason: string): Step => ({ op: 'replaceMany', col: c.name, pairs: list.map((f) => [f.from, f.to]), reason });
+    const rows = (list: ValueFix[]) => list.reduce((n, f) => n + f.count, 0);
+
+    const labels = fixes.filter((f) => f.reason !== 'likely typo');
+    if (labels.length) {
+      const affected = rows(labels);
+      const kinds = (['stray characters', 'letter case', 'spelling variant', 'extra spaces'] as const)
+        .map((r) => ({ r, n: rows(labels.filter((f) => f.reason === r)) })).filter((x) => x.n)
+        .map((x) => `${x.r} (${x.n.toLocaleString('en-US')})`);
       add({
-        kind: 'label-variants', severity: 'warning', column: c.name, count: affected, auto: true, steps, changes: [],
-        title: `${affected.toLocaleString()} inconsistent label${affected > 1 ? 's' : ''} in ${c.name}`,
-        detail: `Spelling variants split one group into several: ${eg.join(', ')}.`,
+        kind: 'label-variants', severity: 'warning', column: c.name, count: affected, auto: true, steps: [step(labels, 'Wrongly typed entries')], changes: [],
+        title: `${affected.toLocaleString('en-US')} inconsistent label${affected > 1 ? 's' : ''} in ${c.name}`,
+        detail: `The same entry was typed in different ways, so one group was split into several. Corrected ${kinds.join(', ')}: ${labels.slice(0, 3).map((f) => `"${f.from}" → "${f.to}"`).join(', ')}.`,
       });
     }
 
     /* A rare label one typing slip away from a far more common label is treated as a misspelling. */
-    if (c.role === 'id' || PERSON_NAME.test(c.name) || IDENTIFIER_NAME.test(c.name) || groups.size < 2 || groups.size > 1500) continue;
-    const totals = [...groups].map(([key, vs]) => ({ key, vs, n: vs.reduce((s, v) => s + counts.get(v)!, 0), main: [...vs].sort((a, b) => counts.get(b)! - counts.get(a)!)[0] }));
-    const typoSteps: Step[] = [];
-    const typoExamples: string[] = [];
-    let typos = 0;
-    totals.forEach((rare) => {
-      const matches = totals.filter((o) => o.n >= Math.max(20, rare.n * 20) && isLikelyTypo(rare.key, o.key));
-      if (matches.length !== 1) return;
-      rare.vs.forEach((v) => typoSteps.push({ op: 'replace', col: c.name, from: v, to: matches[0].main }));
-      typos += rare.n;
-      if (typoExamples.length < 3) typoExamples.push(`"${rare.main}" (${rare.n.toLocaleString('en-US')}) → "${matches[0].main}" (${matches[0].n.toLocaleString('en-US')})`);
-    });
-    if (typoSteps.length) {
+    const typos = fixes.filter((f) => f.reason === 'likely typo');
+    if (typos.length) {
+      const labelTo = new Map(labels.map((f) => [f.from, f.to]));
+      const misspelled = new Set(typos.map((f) => f.from));
+      const kept = new Map<string, number>();
+      counts.forEach((n, v) => { if (!misspelled.has(v)) { const to = labelTo.get(v) ?? v; kept.set(to, (kept.get(to) ?? 0) + n); } });
+      const n = rows(typos);
       add({
-        kind: 'label-variants', severity: 'warning', column: c.name, count: typos, auto: true, steps: typoSteps, changes: [],
-        title: `${typos.toLocaleString('en-US')} likely misspelled label${typos > 1 ? 's' : ''} in ${c.name}`,
-        detail: `Each differs by one letter from a much more common label, so they were counted together: ${typoExamples.join(', ')}. Switch this off if they are really different.`,
+        kind: 'label-variants', severity: 'warning', column: c.name, count: n, auto: true, steps: [step(typos, 'Likely misspelled')], changes: [],
+        title: `${n.toLocaleString('en-US')} likely misspelled label${n > 1 ? 's' : ''} in ${c.name}`,
+        detail: `Each differs by one letter from a much more common label, so they were counted together: ${typos.slice(0, 3).map((f) => `"${f.from}" (${f.count.toLocaleString('en-US')}) → "${f.to}" (${(kept.get(f.to) ?? 0).toLocaleString('en-US')})`).join(', ')}. Switch this off if they are really different.`,
       });
     }
   }

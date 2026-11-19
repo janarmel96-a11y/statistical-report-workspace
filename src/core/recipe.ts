@@ -87,6 +87,7 @@ export function describeStep(s: Step): string {
     case 'split': return `Split ${s.col} at "${s.sep}"`;
     case 'dedupe': return 'Removed duplicate rows';
     case 'replace': return `Replaced "${s.from}" with "${s.to}" in ${s.col}`;
+    case 'replaceMany': return `Corrected ${s.pairs.length} spelling${s.pairs.length === 1 ? '' : 's'} in ${s.col}: ${s.reason}`;
     case 'excludeRows': return `Excluded ${s.rows.length} rows: ${s.reason}`;
     case 'setCells': return `Corrected ${s.changes.length} values in ${s.col}: ${s.reason}`;
     case 'ageBands': return `Added ${s.name} from ${s.col}`;
@@ -222,6 +223,12 @@ export function applyStep(t: DataTable, s: Step): DataTable {
     case 'replace': {
       const c = getColumn(t, s.col);
       return c ? setCol(t, s.col, { values: c.values.map((v) => (v === s.from ? s.to : v)) }) : t;
+    }
+    case 'replaceMany': {
+      const c = getColumn(t, s.col);
+      if (!c) return t;
+      const map = new Map(s.pairs);
+      return setCol(t, s.col, { values: c.values.map((v) => (map.has(v) ? map.get(v)! : v)) });
     }
     case 'excludeRows': {
       const drop = new Set(s.rows);

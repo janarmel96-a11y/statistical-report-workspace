@@ -270,6 +270,7 @@ export function Report() {
             ].filter(Boolean).join(', ') || 'No corrections were needed'}.
             {s.autoNotice.review > 0 && ` ${s.autoNotice.review} ${s.autoNotice.review === 1 ? 'item needs' : 'items need'} your review.`}
             {s.autoNotice.skipped.length > 0 && ` Not used: ${s.autoNotice.skipped.join(', ')}.`}
+            {s.autoNotice.repeated.length > 0 && ` Left out so no row is counted twice: ${s.autoNotice.repeated.join('; ')}.`}
             {s.autoNotice.note && ` ${s.autoNotice.note}`}
           </span>
           <button className="btn sm" onClick={() => { s.dismissAutoNotice(); s.setRoute('prepare'); }}>Review data</button>

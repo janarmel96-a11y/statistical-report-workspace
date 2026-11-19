@@ -161,3 +161,90 @@ export function checkCombined(sources: CombineSource[], columns: CombineColumn[]
 }
 
 export const toRawTable = (r: CombineResult, name: string): RawTable => ({ name, source: name, headers: r.headers, rows: r.rows });
+
+/**
+ * Source `table` has no row that is not also in source `within`. `same` means the two hold exactly the same rows.
+ * `byStamp` names the date-time column that matched the rows when some of their other cells were edited.
+ */
+export interface Overlap { table: number; within: number; same: boolean; byStamp?: string }
+
+/** 53-bit string hash (cyrb53). Two different rows sharing a hash is vanishingly unlikely. */
+function hash(s: string): number {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+
+const cellKey = (v: RawCell | undefined) => (v === null || v === undefined ? '' : typeof v === 'string' ? v.trim().toLowerCase() : typeof v === 'object' ? `d${v.date}` : `${typeof v}${v}`);
+
+/** Date-time columns that tell rows apart, such as the Timestamp of form responses: at least 99% distinct and almost never blank. */
+function stampColumns(s: CombineSource): number[] {
+  const out: { c: number; ratio: number }[] = [];
+  s.headers.forEach((_, c) => {
+    const seen = new Set<number>();
+    let n = 0;
+    for (const r of s.rows) { const v = r[c]; if (v && typeof v === 'object' && v.date % 86400000 !== 0) { n++; seen.add(v.date); } }
+    if (n >= s.rows.length * 0.95 && seen.size >= s.rows.length * 0.99) out.push({ c, ratio: seen.size / s.rows.length });
+  });
+  return out.sort((a, b) => b.ratio - a.ratio || a.c - b.c).map((x) => x.c);
+}
+
+/**
+ * Finds sources whose rows already appear in another source with the same headers: the same file added twice,
+ * or a master sheet next to the monthly sheets it was built from. Stacking those would count every row twice.
+ * A copy whose cells were edited afterwards is still found when its rows carry the same unique Timestamps.
+ */
+export function findOverlaps(sources: CombineSource[]): Overlap[] {
+  const shape = (s: CombineSource) => s.headers.map(headerKey).sort().join('\u0001');
+  const fingerprints = new Map<number, Map<number, number>>();
+  const prints = (i: number) => {
+    let m = fingerprints.get(i);
+    if (m) return m;
+    const s = sources[i];
+    const order = s.headers.map((h, c) => ({ h: headerKey(h), c })).sort((a, b) => (a.h < b.h ? -1 : a.h > b.h ? 1 : a.c - b.c)).map((x) => x.c);
+    m = new Map();
+    for (const r of s.rows) { const k = hash(order.map((c) => cellKey(r[c])).join('\u0001')); m.set(k, (m.get(k) ?? 0) + 1); }
+    fingerprints.set(i, m);
+    return m;
+  };
+  const stamps = new Map<number, number[]>();
+  const stampsOf = (i: number) => { let s = stamps.get(i); if (!s) { s = stampColumns(sources[i]); stamps.set(i, s); } return s; };
+  /** The header of a Timestamp column under which at least 98% of the smaller source's rows are found in the larger one. */
+  const sameStamps = (big: number, small: number): string | null => {
+    for (const c of stampsOf(small)) {
+      const key = headerKey(sources[small].headers[c]);
+      const at = sources[big].headers.findIndex((h) => headerKey(h) === key);
+      if (at < 0) continue;
+      const have = new Set<number>();
+      for (const r of sources[big].rows) { const v = r[at]; if (v && typeof v === 'object') have.add(v.date); }
+      let hits = 0;
+      for (const r of sources[small].rows) { const v = r[c]; if (v && typeof v === 'object' && have.has(v.date)) hits++; }
+      if (hits >= sources[small].rows.length * 0.98) return sources[small].headers[c];
+    }
+    return null;
+  };
+  const out: Overlap[] = [];
+  const bySize = sources.map((_, i) => i).filter((i) => sources[i].rows.length > 0).sort((a, b) => sources[b].rows.length - sources[a].rows.length || a - b);
+  const flagged = new Set<number>();
+  for (const i of bySize) {
+    if (flagged.has(i)) continue;
+    for (const j of bySize) {
+      if (j === i || flagged.has(j) || sources[j].rows.length > sources[i].rows.length || shape(sources[i]) !== shape(sources[j])) continue;
+      if (sources[j].rows.length === sources[i].rows.length && j < i) continue;
+      const big = prints(i);
+      let inside = true;
+      for (const [k, n] of prints(j)) if ((big.get(k) ?? 0) < n) { inside = false; break; }
+      if (inside) { out.push({ table: j, within: i, same: sources[j].rows.length === sources[i].rows.length }); flagged.add(j); continue; }
+      const byStamp = sameStamps(i, j);
+      if (byStamp) { out.push({ table: j, within: i, same: false, byStamp }); flagged.add(j); }
+    }
+  }
+  return out;
+}
