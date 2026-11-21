@@ -212,8 +212,8 @@ export default function MswdDialog({ onClose, initial }: { onClose: () => void; 
             </section>)}
 
         {brief && (
-          <section className="analyst open mswd-ai" aria-label="AI analyst">
-            <header><span className="analyst-badge"><BrainCircuit size={16} /> AI analyst</span><h2>{brief.headline}</h2></header>
+          <section className="analyst open mswd-ai" aria-label="Analyst">
+            <header><span className="analyst-badge"><BrainCircuit size={16} /> Analyst</span><h2>{brief.headline}</h2></header>
             {brief.keyNumbers.length > 0 && <KeyTiles items={brief.keyNumbers} />}
             <div className="analyst-body">
               {brief.forecast && (

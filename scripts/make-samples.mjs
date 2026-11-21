@@ -71,4 +71,112 @@ const money = (v) => v.toFixed(2);
   }
   writeFileSync(join(out, 'service-operations.csv'), `${lines.join('\n')}\n`);
 }
+/* Level 1. Monthly budget: four clean columns, the simplest possible report */
+{
+  const r = rng(1201);
+  const cats = [['Rent', 15000, 0], ['Food', 9000, 0.12], ['Transport', 3500, 0.2], ['Utilities', 4200, 0.12], ['Savings', 6000, 0.25], ['Leisure', 2500, 0.3]];
+  const lines = ['Month,Category,Planned,Actual'];
+  for (let m = 0; m < 12; m++) {
+    for (const [name, plan, swing] of cats) {
+      let season = 1;
+      if (name === 'Utilities') season = 1 + 0.28 * Math.max(0, Math.cos(((m - 4) / 12) * 2 * Math.PI)); // hot months
+      if (name === 'Food' && m === 11) season = 1.3;
+      if (name === 'Leisure' && (m === 11 || m === 3)) season = 1.7;
+      if (name === 'Savings' && m === 11) season = 0.6;
+      const actual = Math.round((plan * season * (1 + (r() - 0.45) * 2 * swing)) / 10) * 10;
+      lines.push(`${iso(Date.UTC(2025, m, 1))},${name},${plan},${actual}`);
+    }
+  }
+  writeFileSync(join(out, 'monthly-budget.csv'), `${lines.join('\n')}\n`);
+}
+
+/* Level 2. Cafe daily sales: two years of days with weekday, weather, and seasonal patterns */
+{
+  const r = rng(3141);
+  const start = Date.UTC(2024, 0, 1);
+  const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const lines = ['Date,Weekday,Weather,Customers,Cups Sold,Revenue'];
+  for (let d = 0; d < 731; d++) {
+    const t = start + d * 86400000;
+    const day = new Date(t).getUTCDay();
+    const m = new Date(t).getUTCMonth();
+    const wet = m >= 5 && m <= 9 ? 0.45 : 0.12;
+    const x = r();
+    const weather = x < wet ? 'Rainy' : x < wet + 0.3 ? 'Cloudy' : 'Sunny';
+    const growth = 1 + (d / 731) * 0.35;
+    const week = day === 0 || day === 6 ? 1.35 : day === 5 ? 1.15 : 1;
+    const wx = weather === 'Rainy' ? 0.78 : weather === 'Cloudy' ? 0.95 : 1.05;
+    const season = 1 + 0.12 * Math.cos(((m - 11) / 12) * 2 * Math.PI);
+    const customers = Math.round(120 * growth * week * wx * season * (0.88 + r() * 0.24));
+    const cups = Math.round(customers * (1.25 + r() * 0.3));
+    lines.push(`${iso(t)},${weekdays[day]},${weather},${customers},${cups},${money(cups * (118 + r() * 14))}`);
+  }
+  writeFileSync(join(out, 'cafe-daily-sales.csv'), `${lines.join('\n')}\n`);
+}
+
+/* Level 3. Branch sales: three quarterly files with the same headers, to be combined into one report */
+{
+  const r = rng(4455);
+  const branches = ['Downtown', 'Harbor', 'Uptown', 'Airport'];
+  const products = { Laptop: 42000, Tablet: 18500, Phone: 24000, Headset: 3200, Monitor: 9800 };
+  const names = Object.keys(products);
+  let id = 70000;
+  for (let q = 0; q < 3; q++) {
+    const lines = ['Sale ID,Sale Date,Branch,Product,Units,Unit Price,Sales'];
+    const rows = [];
+    for (let i = 0; i < 360; i++) {
+      const t = Date.UTC(2025, q * 3, 1) + Math.floor(r() * 90) * 86400000;
+      const branch = branches[Math.floor(r() ** (q === 2 ? 0.8 : 1.2) * 4)];
+      const product = names[Math.floor(r() * names.length)];
+      const units = 1 + Math.floor(r() * (product === 'Headset' ? 8 : 4));
+      const price = Math.round(products[product] * (0.92 + r() * 0.16));
+      rows.push({ t, branch, product, units, price });
+    }
+    rows.sort((a, b) => a.t - b.t).forEach((x) => lines.push(`S-${id++},${iso(x.t)},${x.branch},${x.product},${x.units},${x.price},${x.units * x.price}`));
+    writeFileSync(join(out, `branch-sales-q${q + 1}-2025.csv`), `${lines.join('\n')}\n`);
+  }
+}
+
+/* Level 4. Supply chain: 16 columns, two dates, blanks, costs and margins, and planted errors */
+{
+  const r = rng(90210);
+  const pick = (a, w) => { let x = r() * w.reduce((p, c) => p + c, 0); for (let i = 0; i < a.length; i++) { x -= w[i]; if (x <= 0) return a[i]; } return a[a.length - 1]; };
+  const warehouses = [['Northgate', 'North'], ['Riverside', 'North'], ['Eastport', 'East'], ['Westfield', 'West'], ['Lakeside', 'South']];
+  const suppliers = [['Apex Supply', 3], ['BlueLine Traders', 5], ['Crestwood Goods', 8], ['Delta Parts', 6], ['Evergreen Co.', 11]];
+  const catalog = [
+    ['Electronics', 'Router', 900, 1400, 1.35], ['Electronics', 'Monitor', 4200, 6100, 1.3], ['Electronics', 'Keyboard', 450, 800, 1.45],
+    ['Office', 'Paper Ream', 180, 240, 1.25], ['Office', 'Printer Ink', 650, 900, 1.6], ['Office', 'Desk Chair', 2500, 4200, 1.4],
+    ['Cleaning', 'Disinfectant', 120, 190, 1.5], ['Cleaning', 'Paper Towels', 90, 140, 1.45],
+    ['Food', 'Coffee Beans', 380, 520, 1.55], ['Food', 'Bottled Water', 15, 22, 1.6],
+  ];
+  const start = Date.UTC(2023, 0, 1);
+  const days = Date.UTC(2025, 11, 31) - start;
+  const rows = [];
+  for (let i = 0; i < 3000; i++) {
+    const t = start + Math.floor(r() ** 0.9 * days / 86400000) * 86400000;
+    const [wh, region] = pick(warehouses, [5, 3, 4, 3, 2]);
+    const [supplier, base] = pick(suppliers, [5, 4, 3, 3, 2]);
+    const [cat, product, lo, hi, markup] = catalog[Math.floor(r() * catalog.length)];
+    const units = Math.max(1, Math.round((product === 'Bottled Water' || product === 'Paper Towels' ? 120 : product === 'Monitor' || product === 'Desk Chair' ? 6 : 30) * (0.4 + r() * 1.2)));
+    const cost = Math.round((lo + r() * (hi - lo)) * 100) / 100;
+    const price = Math.round(cost * markup * (0.95 + r() * 0.1) * 100) / 100;
+    const lead = Math.max(1, Math.round(base * (0.6 + r() * 0.9) + (new Date(t).getUTCMonth() === 11 ? 3 : 0)));
+    const rating = Math.min(5, Math.max(1, 4.9 - lead * 0.16 + (r() - 0.5) * 1.1));
+    rows.push({ t, wh, region, supplier, cat, product, units, cost, price, lead, rating: r() < 0.11 ? '' : rating.toFixed(1) });
+  }
+  rows.sort((a, b) => a.t - b.t);
+  const lines = ['Order ID,Order Date,Delivery Date,Region,Warehouse,Supplier,Category,Product,Units,Unit Cost,Unit Price,Revenue,Cost,Lead Time (Days),On Time,Customer Rating'];
+  rows.forEach((x, i) => {
+    let region = x.region; let revenue = money(x.units * x.price); let units = String(x.units);
+    if (i % 173 === 11) revenue = money(x.units * x.price * 1.1);   // wrong multiplication
+    if (i === 1500) revenue = money(x.units * x.price * 100);        // misplaced decimal
+    if (i === 2222) revenue = '#VALUE!';                             // spreadsheet error
+    if (i === 2600) units = '';                                      // missing value
+    if (i % 89 === 3) region = region.toLowerCase();                 // inconsistent label
+    const line = `PO-${30000 + i},${iso(x.t)},${iso(x.t + x.lead * 86400000)},${region},${x.wh},${x.supplier},${x.cat},${x.product},${units},${money(x.cost)},${money(x.price)},${revenue},${money(x.units * x.cost)},${x.lead},${x.lead <= 7 ? 'Yes' : 'No'},${x.rating}`;
+    lines.push(line);
+    if (i === 999 || i === 2001) lines.push(line);                   // duplicate row
+  });
+  writeFileSync(join(out, 'supply-chain.csv'), `${lines.join('\n')}\n`);
+}
 console.log('Samples written to public/samples');

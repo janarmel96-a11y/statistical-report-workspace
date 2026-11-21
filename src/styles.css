@@ -118,7 +118,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .samples h2, .recent h2 { font-size: 15px; }
 .sample { display: flex; align-items: center; gap: 12px; text-align: left; padding: 14px; border-radius: 12px; background: var(--surface-2); }
 .sample:hover { background: var(--surface-3); }
-.sample span { flex: 1; display: grid; gap: 2px; }
+.sample > span { flex: 1; display: grid; gap: 2px; }
 .sample small { color: var(--ink-2); }
 .sample em { font-style: normal; font-size: 13px; color: var(--ink-2); }
 .recent { grid-column: span 12; }
@@ -361,7 +361,7 @@ input.name-plain:hover, input.name-plain:focus { border-color: var(--line-2); ba
 .card-drag h3 { display: flex; align-items: center; gap: 8px; }
 .card-drag h3 > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .insight-head { display: flex; align-items: center; gap: 7px; }
-/* AI analyst brief */
+/* Analyst brief */
 .analyst { margin: 4px 0 12px; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, var(--surface)), var(--surface) 60%); box-shadow: var(--shadow); overflow: hidden; animation: analyst-in .5s cubic-bezier(.2, .7, .2, 1) both; }
 .analyst > header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 14px; }
 .analyst > header h2 { flex: 1; min-width: 220px; font-size: 15.5px; line-height: 1.35; }
@@ -484,7 +484,7 @@ li.icon-list-note { display: block; color: var(--ink-2); font-size: 12px; }
 
 /* Present mode */
 .report.presenting { position: fixed; inset: 0; z-index: 90; height: 100vh; }
-/* AI story slides of Present mode */
+/* Story slides of Present mode */
 .story-stage { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; padding: 48px 6vw 92px; background: radial-gradient(1200px 700px at 15% 10%, color-mix(in srgb, var(--accent) 16%, var(--page)), var(--page) 60%); overflow: hidden; }
 .story-slide { position: relative; width: min(1180px, 100%); display: grid; gap: 18px; align-content: center; animation: story-zoom .8s cubic-bezier(.2, .7, .2, 1) both; }
 .story-slide.rise { animation-name: story-rise; } .story-slide.slide { animation-name: story-slide; }
@@ -796,6 +796,54 @@ textarea.plain { font-family: var(--font); font-size: 13px; }
   .stage-view { height: 46vh; }
 }
 
+/* Sample data, from simple to advanced */
+.samples-head { display: grid; gap: 2px; }
+.samples-head small { color: var(--ink-2); font-size: 12.5px; }
+.samples .sample { padding: 11px 14px; }
+.sample-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sample-seen { color: var(--good); flex: none; }
+.level { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; border-radius: 99px; font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--tone); background: color-mix(in srgb, var(--tone) 13%, transparent); }
+.level.l1 { --tone: var(--good); } .level.l2 { --tone: var(--accent); } .level.l3 { --tone: var(--warn); } .level.l4 { --tone: var(--bad); }
+.level-bars { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 10px; }
+.level-bars i { width: 3px; border-radius: 1px; background: color-mix(in srgb, var(--tone) 30%, transparent); }
+.level-bars i:nth-child(1) { height: 4px; } .level-bars i:nth-child(2) { height: 6px; } .level-bars i:nth-child(3) { height: 8px; } .level-bars i:nth-child(4) { height: 10px; }
+.level-bars i.on { background: var(--tone); }
+
+/* Next-step guide */
+.guide { position: fixed; left: 16px; bottom: 16px; z-index: 80; width: min(340px, calc(100vw - 32px)); display: grid; gap: 10px; padding: 12px 14px 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line-2); box-shadow: var(--shadow-lg); animation: guide-in .45s cubic-bezier(.2, .7, .2, 1) both; }
+.guide header { display: flex; align-items: center; gap: 8px; }
+.guide header small { margin-left: auto; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.guide-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.guide-progress { display: block; height: 4px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+.guide-progress i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .5s cubic-bezier(.2, .7, .2, 1); }
+.guide-step { display: grid; gap: 6px; animation: guide-step .4s cubic-bezier(.2, .7, .2, 1) both; }
+.guide-step b { display: flex; align-items: center; gap: 6px; font-size: 15px; line-height: 1.3; }
+.guide-step p { color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+.guide-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.guide-actions .link { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.guide-pill { position: fixed; left: 16px; bottom: 16px; z-index: 80; display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: 99px; font-weight: 650; color: var(--on-accent); background: var(--accent); box-shadow: var(--shadow-lg); }
+.guide-pill:hover { background: var(--accent-hover); }
+.guide-dot { width: 8px; height: 8px; border-radius: 50%; background: #fff; animation: guide-blink 1.6s ease-in-out infinite; }
+.guide-next { outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent) !important; outline-offset: 3px; animation: guide-breathe 2.2s ease-in-out infinite; }
+.guide-spot { outline: 3px solid var(--accent) !important; outline-offset: 4px; animation: guide-pulse 1s ease-out 3 !important; }
+body:has(.presenting, .studio, .overlay) :is(.guide, .guide-pill) { display: none; }
+@keyframes guide-in { from { opacity: 0; transform: translateY(16px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes guide-step { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+@keyframes guide-blink { 50% { opacity: .35; } }
+@keyframes guide-breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent); } }
+@keyframes guide-pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } to { box-shadow: 0 0 0 18px color-mix(in srgb, var(--accent) 0%, transparent); } }
+
+/* Present mode: slide timer and narration */
+.present-bar .icon-btn.on { color: var(--accent); background: var(--accent-soft); }
+.present-timer { position: absolute; left: 12px; right: 12px; bottom: 3px; height: 2px; border-radius: 99px; overflow: hidden; background: color-mix(in srgb, var(--line) 60%, transparent); }
+.present-timer i { display: block; height: 100%; background: var(--accent); transform-origin: left; animation: present-timer linear both; }
+.present-speaking { display: inline-flex; align-items: center; gap: 2px; height: 16px; padding: 0 4px; }
+.present-speaking i { width: 3px; height: 100%; border-radius: 2px; background: var(--accent); transform-origin: center; animation: present-speak .9s ease-in-out infinite; }
+.present-speaking i:nth-child(2) { animation-delay: .15s; } .present-speaking i:nth-child(3) { animation-delay: .3s; } .present-speaking i:nth-child(4) { animation-delay: .45s; }
+@keyframes present-timer { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes present-speak { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .guide-next, .guide-spot, .guide-dot, .present-speaking i { animation: none !important; } }
+
 @media (max-width: 1099px) {
   .side { position: fixed; right: 0; top: 0; bottom: 0; z-index: 70; box-shadow: var(--shadow-lg); max-width: 100vw; }
 }
@@ -822,7 +870,7 @@ textarea.plain { font-family: var(--font); font-size: 13px; }
 @media print {
   @page { size: A4 landscape; margin: 10mm; }
   body { background: #fff; }
-  .no-print, .side, .filterbar .btn, .segmented, .card-tools, .react-resizable-handle, .toasts { display: none !important; }
+  .no-print, .side, .filterbar .btn, .segmented, .card-tools, .react-resizable-handle, .toasts, .guide, .guide-pill { display: none !important; }
   .report, .report-body, .canvas { height: auto !important; overflow: visible !important; display: block; }
   .card { break-inside: avoid; box-shadow: none; }
   .react-grid-item { break-inside: avoid; }

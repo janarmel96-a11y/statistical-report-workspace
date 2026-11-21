@@ -4,7 +4,7 @@ import { DAY, monthRange, philippineHolidays, workingDays, type MswdCheck, type 
 import { chiSquare, forecast, mannKendall, mean, stdev } from './stats';
 
 /**
- * The AI summary of an MSWD performance report: how patient numbers move, what to expect next month,
+ * The analyst summary of an MSWD performance report: how patient numbers move, what to expect next month,
  * who carries the workload, who needs attention, and how the patient mix shifts. Worked out on this device.
  */
 

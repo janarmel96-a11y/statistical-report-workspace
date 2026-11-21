@@ -75,7 +75,7 @@ interface State {
   toast(kind: Toast['kind'], text: string): void;
   dismissToast(id: number): void;
   importFiles(files: File[]): Promise<void>;
-  loadSample(url: string, name: string): Promise<void>;
+  loadSample(urls: string[], name: string): Promise<void>;
   cancelImport(): void;
   closeMswd(): void;
   confirmImport(tables: RawTable[], combine: CombineConfig, name?: string): void;
@@ -270,12 +270,16 @@ export const useStore = create<State>((set, get) => {
       }
       set({ pending: found });
     },
-    loadSample: async (url, name) => {
+    loadSample: async (urls, name) => {
       set({ busy: { message: `Loading ${name}` } });
       try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Sample not found');
-        await get().importFiles([new File([await res.blob()], name)]);
+        // A sample can be several files, so combining files can be tried too.
+        const files = await Promise.all(urls.map(async (url) => {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error('Sample not found');
+          return new File([await res.blob()], url.split('/').pop() ?? name);
+        }));
+        await get().importFiles(files);
       } catch {
         get().toast('error', 'The sample could not be loaded.');
       }

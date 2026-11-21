@@ -378,7 +378,7 @@ export function SidePanel({ visual, cs, tab, onTab, onClose }: { visual: Visual 
   return (
     <aside className="side" aria-label="Report tools">
       <div className="side-tabs" role="tablist">
-        {TABS.map((t) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => onTab(t)}>{t}</button>)}
+        {TABS.map((t) => <button key={t} role="tab" data-guide={t === 'Assistant' ? 'assistant-tab' : undefined} aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => onTab(t)}>{t}</button>)}
         <button className="icon-btn sm side-close" aria-label="Close panel" onClick={onClose}><X size={15} /></button>
       </div>
       <div className="side-body" role="tabpanel">

@@ -17,7 +17,7 @@ export interface WorkbookInput {
   filters: string;
   kpis: { label: string; value: number | null; text?: string; format?: NumberFormat; currency?: string; note?: string }[];
   insights: Insight[];
-  /** The AI analyst brief, one paragraph or bullet per line. */
+  /** The analyst brief, one paragraph or bullet per line. */
   brief?: { heading: string; lines: string[] }[];
   visuals: (VisualTable & { image?: { base64: string; width: number; height: number } })[];
   data: DataTable;
@@ -235,10 +235,10 @@ export async function buildWorkbook(input: WorkbookInput, opts: WorkbookOptions)
     row++;
   }
 
-  /* AI analyst brief ------------------------------------------------------------------------- */
+  /* Analyst brief ---------------------------------------------------------------------------- */
   if (input.brief?.length) {
-    const ai = wb.addWorksheet(safeSheetName('AI Summary', used), { views: [{ showGridLines: false }] });
-    title(ai, 'AI analyst brief', 'Worked out on this device from the report\'s own numbers. Each sentence names the test behind it.');
+    const ai = wb.addWorksheet(safeSheetName('Analyst Summary', used), { views: [{ showGridLines: false }] });
+    title(ai, 'Analyst brief', 'Worked out on this device from the report\'s own numbers. Each sentence names the test behind it.');
     ai.getColumn(1).width = 120;
     let r = 4;
     for (const part of input.brief) {

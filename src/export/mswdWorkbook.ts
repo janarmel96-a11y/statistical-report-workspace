@@ -787,14 +787,14 @@ function workerSheet(x: Context): XSheet {
   return { name: NAMES.worker, rows: g.out(), merges, charts, validations, noGrid: true, cols: [4.43, 37.29, 18.71, 15.86, 10.86].map((width) => ({ width })) };
 }
 
-/* ---------- AI SUMMARY ---------- */
+/* ---------- ANALYST SUMMARY ---------- */
 
 function aiSheet(x: Context): XSheet {
   const { st } = x;
   const brief = analyzeMswd(x.p, x.report, x.checks);
   const g = new Grid();
-  const AI = q('AI SUMMARY');
-  g.put(1, 1, 'AI ANALYST: MSWD PERFORMANCE', st.aiTitle);
+  const AI = q('ANALYST SUMMARY');
+  g.put(1, 1, 'ANALYST: MSWD PERFORMANCE', st.aiTitle);
   g.heights.set(1, 30);
   g.put(2, 1, 'Worked out on this device from MASTER DATA. Each statement names the test or figure behind it. The charts on the right read the tables at the bottom of this sheet.', st.note);
   g.put(4, 1, brief.headline, st.aiHeadline);
@@ -855,7 +855,7 @@ function aiSheet(x: Context): XSheet {
       series: [{ name: 'Patients', categories: `${AI}!${span(t0, 1, tl, 1)}`, values: `${AI}!${span(t0, 2, tl, 2)}`, color: '4E5B92', cache: { categories: brief.workload.rows.map((w) => w.label), values: brief.workload.rows.map((w) => w.value) } }],
     });
   }
-  return { name: 'AI SUMMARY', rows: g.out(), noGrid: true, charts, cols: [{ width: 3 }, { width: 100 }, { width: 12 }, { width: 12 }] };
+  return { name: 'ANALYST SUMMARY', rows: g.out(), noGrid: true, charts, cols: [{ width: 3 }, { width: 100 }, { width: 12 }, { width: 12 }] };
 }
 
 /* ---------- Workbook ---------- */
@@ -890,7 +890,7 @@ export async function buildMswdWorkbook(p: Prepared, report: MswdReport, checks:
   x.settings.deptRange = `${q(NAMES.settings)}!$B$${ws + 2}:$C$${ws + 1 + Math.max(1, report.workers.length)}`;
 
   onProgress?.('Laying out the report sheets');
-  const used = new Set<string>([...Object.values(NAMES), 'AI SUMMARY'].map((n) => n.toLowerCase()));
+  const used = new Set<string>([...Object.values(NAMES), 'ANALYST SUMMARY'].map((n) => n.toLowerCase()));
   const months: XSheet[] = [];
   if (opts.monthSheets && p.cols.month !== undefined) {
     const names = monthSheetNames(report.months);

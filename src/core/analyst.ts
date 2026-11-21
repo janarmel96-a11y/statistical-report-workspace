@@ -7,7 +7,7 @@ import { anova, chiSquare, forecast, iqrOutliers, mannKendall, mean, quantileSor
 import type { Cell, Constraint, DatePart, Finding, NumberFormat } from './types';
 
 /**
- * The AI analyst: reads the whole report on this device and writes a brief, the way an analyst would.
+ * The analyst: reads the whole report on this device and writes a brief, the way an analyst would.
  * Every sentence comes from a calculation with a stated test, so nothing is guessed and no data leaves the device.
  */
 
@@ -415,7 +415,7 @@ export function analyzeReport(en: Engine, findings: Finding[], cs: Constraint[])
   };
 }
 
-/** The brief in headed sections, for the AI Summary sheet and slides. */
+/** The brief in headed sections, for the Analyst Summary sheet and slides. */
 export function briefSections(b: AnalystBrief): { heading: string; lines: string[] }[] {
   return [
     { heading: b.headline, lines: b.summary },

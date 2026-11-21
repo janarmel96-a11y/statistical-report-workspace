@@ -1,6 +1,7 @@
 // Created by Jan Armel Java Ajeno. Copyright (c) 2026. All rights reserved.
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, BarChart3, FileSpreadsheet, FileUp, ListChecks, Pencil, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { ArrowRight, BarChart3, CheckCircle2, FileSpreadsheet, FileUp, ListChecks, Pencil, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { LEVEL_NAMES, SAMPLES, sampleGuideId } from '../core/samples';
 import { ACCEPT } from '../ingest';
 import { deleteProject, listProjects, loadProject, renameSavedProject, type ProjectSummary } from '../state/persist';
 import { useStore } from '../state/store';
@@ -8,11 +9,10 @@ import { Logo, ThemeSwitch } from './common';
 import { NameInput } from './NameInput';
 import { PrivacyDialog } from './PrivacyDialog';
 
-
-const SAMPLES = [
-  { file: 'retail-sales.csv', name: 'Retail sales', meta: '3 years · 1,500 orders', note: 'Includes planted calculation errors, so you can watch them get fixed.' },
-  { file: 'service-operations.csv', name: 'Service operations', meta: '2 years · 900 tickets', note: 'Response times, satisfaction scores, and team workload.' },
-];
+/** Samples the guide has seen opened on this device, so each one can show a check mark. */
+function openedSamples(): string[] {
+  try { const v = JSON.parse(localStorage.getItem('srw-guide-done') ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+}
 
 const STEPS = [
   { icon: FileUp, title: 'Add a file', text: 'Tables from Excel, CSV, JSON, PDF, Word, PowerPoint, or web pages.' },
@@ -32,6 +32,7 @@ export function Home() {
   const [privacy, setPrivacy] = useState(false);
   const [recent, setRecent] = useState<ProjectSummary[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [opened] = useState(openedSamples);
   const input = useRef<HTMLInputElement>(null);
 
   const renameRecent = async (id: string, name: string) => {
@@ -70,10 +71,10 @@ export function Home() {
             <h2>Drop your file here</h2>
             <p>Excel, CSV, JSON, PDF, Word, PowerPoint, OpenDocument, or web page reports, up to 200 MB</p>
             <p className="drop-auto">Files with the same headers are combined.</p>
-            <button className="btn primary lg" onClick={() => input.current?.click()}>Choose a file</button>
+            <button className="btn primary lg" data-guide="upload" onClick={() => input.current?.click()}>Choose a file</button>
             <input ref={input} type="file" accept={ACCEPT} multiple hidden aria-label="Choose data files" onChange={(e) => { onFiles(e.target.files); e.target.value = ''; }} />
             <div className="auto-mode">
-              <label className="switch">
+              <label className="switch" data-guide="auto-mode">
                 <input type="checkbox" checked={autoMode} onChange={(e) => setAutoMode(e.target.checked)} />
                 <i /> <span>Automatic report</span>
               </label>
@@ -82,13 +83,27 @@ export function Home() {
           </div>
 
           <div className="samples">
-            <h2>Try it with sample data</h2>
-            {SAMPLES.map((s) => (
-              <button key={s.file} className="sample" onClick={() => void loadSample(`samples/${s.file}`, s.file)}>
-                <span><b>{s.name}</b><small>{s.meta}</small><em>{s.note}</em></span>
-                <ArrowRight size={18} />
-              </button>
-            ))}
+            <header className="samples-head">
+              <h2>Try it with sample data</h2>
+              <small>From simple to advanced. Each one teaches something new.</small>
+            </header>
+            {SAMPLES.map((s) => {
+              const seen = opened.includes(sampleGuideId(s));
+              return (
+                <button key={s.id} className="sample" data-guide={sampleGuideId(s)} onClick={() => void loadSample(s.files.map((f) => `samples/${f}`), s.name)}>
+                  <span>
+                    <span className="sample-top">
+                      <b>{s.name}</b>
+                      <span className={`level l${s.level}`} title={`Level ${s.level} of 4`}><span className="level-bars" aria-hidden="true">{[1, 2, 3, 4].map((n) => <i key={n} className={n <= s.level ? 'on' : ''} />)}</span>{LEVEL_NAMES[s.level]}</span>
+                      {seen && <CheckCircle2 size={15} className="sample-seen" aria-label="Opened before" />}
+                    </span>
+                    <small>{s.meta}</small>
+                    <em>{s.learn}</em>
+                  </span>
+                  <ArrowRight size={18} />
+                </button>
+              );
+            })}
           </div>
 
           {recent.length > 0 && (

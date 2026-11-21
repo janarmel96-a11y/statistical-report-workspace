@@ -150,7 +150,7 @@ function DataGrid({ selected, onSelect, marked, onMark }: { selected: string | n
           <div className="grid-rownum head">#</div>
           {table.columns.map((c, i) => (
             <div key={c.name} role="none" className={`grid-th-wrap ${marked.includes(c.name) ? 'marked' : ''}`} style={{ width: COL_W }}>
-              <button role="columnheader" className={`grid-th ${selected === c.name ? 'on' : ''}`} style={{ width: COL_W }} onClick={() => onSelect(c.name)} title={`${c.name}: select to edit`}>
+              <button role="columnheader" data-guide="grid-head" className={`grid-th ${selected === c.name ? 'on' : ''}`} style={{ width: COL_W }} onClick={() => onSelect(c.name)} title={`${c.name}: select to edit`}>
                 <span className="th-name">{c.name}</span>
                 <span className="th-meta"><em className={`type-${c.type}`}>{TYPES.find(([t]) => t === c.type)?.[1]}</em>{profiles[i].missing > 0 ? <small>{formatPct(profiles[i].missing, 0)} blank</small> : <small>Complete</small>}</span>
                 <span className="th-bar"><i style={{ width: `${(1 - profiles[i].missing) * 100}%` }} /></span>
@@ -248,10 +248,10 @@ export function Prepare() {
           <option value="auto">Detect</option><option value="dot">1,234.56</option><option value="comma">1.234,56</option>
         </select></label>
         <ThemeSwitch />
-        <button className="btn primary" onClick={s.buildReport}>{s.report ? 'Update report' : 'Build report'} <ArrowRight size={16} /></button>
+        <button className="btn primary" data-guide="build" onClick={s.buildReport}>{s.report ? 'Update report' : 'Build report'} <ArrowRight size={16} /></button>
       </header>
       <div className="prepare-body">
-        <aside className="health" aria-label="Data checks">
+        <aside className="health" aria-label="Data checks" data-guide="checks">
           {q && (
             <section className="score">
               <div className="score-num"><strong>{q.score}</strong><span>/100</span></div>

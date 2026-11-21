@@ -72,10 +72,10 @@ describe('Excel and Google Sheets export', () => {
     const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellFormula: true, cellDates: false });
     expect(wb.SheetNames.slice(0, 1)).toEqual(['Summary']);
     ['Data', 'Column Statistics', 'Corrections', 'Measures'].forEach((n) => expect(wb.SheetNames).toContain(n));
-    // The AI analyst brief has its own sheet, starting with its headline.
-    expect(wb.SheetNames[1]).toBe('AI Summary');
-    expect(String(wb.Sheets['AI Summary'].A1.v)).toBe('AI analyst brief');
-    expect(String(wb.Sheets['AI Summary'].A4.v)).toBe(input.brief![0].heading);
+    // The analyst brief has its own sheet, starting with its headline.
+    expect(wb.SheetNames[1]).toBe('Analyst Summary');
+    expect(String(wb.Sheets['Analyst Summary'].A1.v)).toBe('Analyst brief');
+    expect(String(wb.Sheets['Analyst Summary'].A4.v)).toBe(input.brief![0].heading);
     const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets.Data, { header: 1, blankrows: false });
     expect(rows.length - 3).toBe(input.rows.length);
     const netCol = input.data.columns.findIndex((c) => c.name === 'Net Sales');

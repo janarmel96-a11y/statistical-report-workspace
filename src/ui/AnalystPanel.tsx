@@ -29,7 +29,7 @@ export function KeyTiles({ items }: { items: AnalystBrief['keyNumbers'] }) {
   );
 }
 
-/** The AI analyst brief: key numbers, summary, forecast, segments, drivers, relationships, distribution, risks, and actions. */
+/** The analyst brief: key numbers, summary, forecast, segments, drivers, relationships, distribution, risks, and actions. */
 export function AnalystPanel({ cs, onClose }: { cs: Constraint[]; onClose: () => void }) {
   const en = useStore((s) => s.engine)!;
   const findings = useStore((s) => s.findings);
@@ -46,18 +46,18 @@ export function AnalystPanel({ cs, onClose }: { cs: Constraint[]; onClose: () =>
   })), dark) : null), [b, dark]);
   const TrendIcon = b.trend?.direction === 'up' ? TrendingUp : b.trend?.direction === 'down' ? TrendingDown : Minus;
   const copy = async () => {
-    try { await navigator.clipboard.writeText(briefText(b)); toast('success', 'The AI analysis was copied.'); } catch { toast('error', 'The analysis could not be copied.'); }
+    try { await navigator.clipboard.writeText(briefText(b)); toast('success', 'The analysis was copied.'); } catch { toast('error', 'The analysis could not be copied.'); }
   };
 
   return (
-    <section className={`analyst ${open ? 'open' : ''}`} aria-label="AI analyst">
+    <section className={`analyst ${open ? 'open' : ''}`} aria-label="Analyst" data-guide="analyst-panel">
       <header>
-        <span className="analyst-badge"><BrainCircuit size={16} /> AI analyst</span>
+        <span className="analyst-badge"><BrainCircuit size={16} /> Analyst</span>
         <h2>{b.headline}</h2>
         <span className={`analyst-confidence ${b.confidence.level}`} title={b.confidence.reason}>{b.confidence.level} confidence</span>
         <button className="icon-btn sm" aria-label="Copy the analysis" title="Copy the analysis" onClick={() => void copy()}><Copy size={14} /></button>
         <button className="icon-btn sm" aria-label={open ? 'Collapse the analysis' : 'Expand the analysis'} onClick={() => setOpen(!open)}>{open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>
-        <button className="icon-btn sm" aria-label="Close the AI analyst" onClick={onClose}><X size={14} /></button>
+        <button className="icon-btn sm" aria-label="Close the analyst" onClick={onClose}><X size={14} /></button>
       </header>
       {open && <>
         {b.keyNumbers.length > 0 && <KeyTiles items={b.keyNumbers} />}

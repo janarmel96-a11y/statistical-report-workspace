@@ -15,7 +15,7 @@ const engineOf = (headers: string[], rows: RawCell[][]) => {
   return { findings, en: new Engine(applyRecipe(table, findings.filter((f) => f.auto).flatMap((f) => f.steps))) };
 };
 
-describe('AI analyst brief', () => {
+describe('Analyst brief', () => {
   // 24 months of sales that grow steadily, with three branches of different size.
   const rows: RawCell[][] = [];
   for (let m = 0; m < 24; m++) {
@@ -148,7 +148,7 @@ describe('formula detection', () => {
   });
 });
 
-describe('MSWD AI summary', () => {
+describe('MSWD analyst summary', () => {
   const headers = ['Month', 'Patient Type', 'Medical Social Worker', 'Type of Patient', 'Classification', 'Date and Time', 'Total Place-Name Errors'];
   const rows: RawCell[][] = [];
   const workers = ['ABAJAR, MARY JOY E.', 'BALAIROS, KYROSE B.', 'DIZON, MARK JOESAN A.', 'SALVADOR, MICHELLE A.'];

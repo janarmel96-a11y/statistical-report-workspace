@@ -6,11 +6,12 @@ import { buildStory, type StoryKpi } from '../core/story';
 import type { Constraint } from '../core/types';
 import { useStore } from '../state/store';
 import { forecastOption } from './analystChart';
+import { sentence } from './narrator';
 import { CountUp } from './CountUp';
 import { EChart } from './EChart';
 
 /**
- * The AI story slides of Present mode: they open the presentation before the report pages and close it after them.
+ * The story slides of Present mode: they open the presentation before the report pages and close it after them.
  * Every slide animates in, numbers count up, and the forecast chart draws itself.
  */
 
@@ -22,13 +23,20 @@ export type DeckSlide =
   | { kind: 'insights'; brief: AnalystBrief }
   | { kind: 'actions'; brief: AnalystBrief; title: string };
 
-export function useStoryDeck(cs: Constraint[], active: boolean): { intro: DeckSlide[]; outro: DeckSlide[] } {
+export interface StoryDeck {
+  intro: DeckSlide[];
+  outro: DeckSlide[];
+  /** What the voice says on each report page, by page id. */
+  pages: Record<string, string>;
+}
+
+export function useStoryDeck(cs: Constraint[], active: boolean): StoryDeck {
   const en = useStore((s) => s.engine);
   const report = useStore((s) => s.report);
   const findings = useStore((s) => s.findings);
   const disabled = useStore((s) => s.disabled);
   return useMemo(() => {
-    if (!active || !en || !report) return { intro: [], outro: [] };
+    if (!active || !en || !report) return { intro: [], outro: [], pages: {} };
     const used = findings.filter((f) => !disabled.includes(f.id));
     const brief = analyzeReport(en, used, cs);
     const scenes = buildStory(en, report, used, cs, { detail: 'detailed', filterText: '' });
@@ -40,8 +48,26 @@ export function useStoryDeck(cs: Constraint[], active: boolean): { intro: DeckSl
       ...(brief.forecast ? [{ kind: 'forecast' as const, brief }] : []),
       ...(brief.drivers.length || brief.risks.length ? [{ kind: 'insights' as const, brief }] : []),
     ];
-    return { intro, outro: [{ kind: 'actions', brief, title: report.title }] };
+    // Each report page is narrated from the plain-language story of its own charts.
+    const pages = Object.fromEntries(report.pages.map((p) => {
+      const ids = new Set(p.visuals.map((v) => v.id));
+      const told = scenes.filter((x) => x.visualId && ids.has(x.visualId)).slice(0, 2).map((x) => x.narration);
+      return [p.id, [sentence(p.name), ...told].join(' ')];
+    }));
+    return { intro, outro: [{ kind: 'actions', brief, title: report.title }], pages };
   }, [active, en, report, findings, disabled, cs]);
+}
+
+/** What the voice says on a story slide. */
+export function slideNarration(slide: DeckSlide): string {
+  switch (slide.kind) {
+    case 'title': return [slide.title, slide.subtitle].map(sentence).join(' ');
+    case 'summary': return [slide.brief.headline, ...slide.brief.summary.slice(1, 5)].map(sentence).join(' ');
+    case 'kpis': return `Key figures. ${slide.kpis.map((k) => sentence(`${k.label}: ${k.value}${k.note ? `, ${k.note}` : ''}`)).join(' ')}`;
+    case 'forecast': return sentence(slide.brief.forecast?.text ?? '');
+    case 'insights': return [...slide.brief.drivers.slice(0, 3).map((d) => d.text), ...slide.brief.risks.slice(0, 2).map((r) => r.text)].map(sentence).join(' ');
+    case 'actions': return `What to do next. ${slide.brief.actions.map(sentence).join(' ')}`;
+  }
 }
 
 const stagger = (i: number, base = 250) => ({ animationDelay: `${base + i * 160}ms` });
@@ -54,7 +80,7 @@ export function StorySlideView({ slide, index }: { slide: DeckSlide; index: numb
       <section className={`story-slide title ${motion}`} aria-label="Title slide">
         <div className="story-glow" aria-hidden="true" />
         {slide.organization && <small className="story-kicker" style={stagger(0, 100)}>{slide.organization}</small>}
-        <span className="story-chip" style={stagger(0, 150)}><Sparkles size={15} /> AI-generated presentation</span>
+        <span className="story-chip" style={stagger(0, 150)}><Sparkles size={15} /> Automatic presentation</span>
         <h1 style={stagger(1)}>{slide.title}</h1>
         <p style={stagger(2)}>{slide.subtitle}</p>
       </section>
@@ -64,8 +90,8 @@ export function StorySlideView({ slide, index }: { slide: DeckSlide; index: numb
     const b = slide.brief;
     const Icon = b.trend?.direction === 'up' ? TrendingUp : b.trend?.direction === 'down' ? TrendingDown : Minus;
     return (
-      <section className={`story-slide ${motion}`} aria-label="AI summary">
-        <small className="story-kicker"><BrainCircuit size={15} /> AI analyst</small>
+      <section className={`story-slide ${motion}`} aria-label="Summary">
+        <small className="story-kicker"><BrainCircuit size={15} /> Analyst</small>
         <h2 style={stagger(0, 80)}>{b.headline}</h2>
         <ul className="story-points">{b.summary.slice(1, 5).map((s, i) => <li key={i} style={stagger(i)}>{s}</li>)}</ul>
         {b.trend && <p className={`story-trend ${b.trend.direction}`} style={stagger(5)}><Icon size={18} /> {b.trend.direction === 'flat' ? 'No significant trend' : `Significant ${b.trend.direction}ward trend`}</p>}
@@ -89,8 +115,8 @@ export function StorySlideView({ slide, index }: { slide: DeckSlide; index: numb
   if (slide.kind === 'forecast') {
     const f = slide.brief.forecast!;
     return (
-      <section className={`story-slide ${motion}`} aria-label="AI forecast">
-        <small className="story-kicker"><BrainCircuit size={15} /> AI forecast</small>
+      <section className={`story-slide ${motion}`} aria-label="Forecast">
+        <small className="story-kicker"><BrainCircuit size={15} /> Forecast</small>
         <h2 style={stagger(0, 80)}>{f.text.split('. ')[0]}.</h2>
         <div className="story-chart" style={stagger(1)}><EChart option={forecastOption(slide.brief, dark, true)} label={f.text} patterns={false} /></div>
         <p className="story-note" style={stagger(3)}>{f.method}{f.mape !== null ? ` · backtest error about ${(f.mape * 100).toFixed(0)}%` : ''} · shaded band shows the 95% range</p>
@@ -101,7 +127,7 @@ export function StorySlideView({ slide, index }: { slide: DeckSlide; index: numb
     const b = slide.brief;
     return (
       <section className={`story-slide ${motion}`} aria-label="What drives the numbers">
-        <small className="story-kicker">What the AI found</small>
+        <small className="story-kicker">What the analysis found</small>
         <div className="story-columns">
           <div>
             <h3>What drives the numbers</h3>
@@ -122,7 +148,7 @@ export function StorySlideView({ slide, index }: { slide: DeckSlide; index: numb
   return (
     <section className={`story-slide closing ${motion}`} aria-label="Recommended actions">
       <div className="story-glow" aria-hidden="true" />
-      <small className="story-kicker"><Sparkles size={15} /> AI recommendations</small>
+      <small className="story-kicker"><Sparkles size={15} /> Recommendations</small>
       <h2 style={stagger(0, 80)}>What to do next</h2>
       <ol className="story-points">{slide.brief.actions.map((a, i) => <li key={i} style={stagger(i)}>{a}</li>)}</ol>
       <p className="story-note" style={stagger(slide.brief.actions.length + 1)}>Confidence: {slide.brief.confidence.level}. {slide.brief.confidence.reason}</p>

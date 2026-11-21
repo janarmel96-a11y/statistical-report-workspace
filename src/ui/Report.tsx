@@ -2,7 +2,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Responsive, WidthProvider, type Layout } from 'react-grid-layout';
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, Bookmark, BrainCircuit, Check, Pause, Play, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Copy, LockKeyhole, Download, Filter, Highlighter, MonitorPlay, Palette, PanelRight, Pencil, Plus, Printer, Redo2, RefreshCw, Search, SlidersHorizontal, Sparkles, Undo2, X,
+  AlertTriangle, ArrowLeft, ArrowRight, Bookmark, BrainCircuit, Check, Pause, Play, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Copy, LockKeyhole, Download, Filter, Highlighter, MonitorPlay, Palette, PanelRight, Pencil, Plus, Printer, Redo2, RefreshCw, Search, SlidersHorizontal, Sparkles, Undo2, Volume2, VolumeX, X,
 } from 'lucide-react';
 import { clonePage, resolveDesign } from '../core/design';
 import { formatCell, formatNumber } from '../core/format';
@@ -15,13 +15,19 @@ import { AnalystPanel } from './AnalystPanel';
 import { AreaPicker } from './AreaPicker';
 import { Logo, Modal, Popover, ThemeSwitch, useDarkMode } from './common';
 import { FieldIcon } from './FieldIcon';
+import { GUIDE_REVEAL } from './GuideAssistant';
 import { NameInput } from './NameInput';
 import { ElementCard } from './PageElements';
 import { SidePanel, type SideTab } from './SidePanel';
-import { StorySlideView, useStoryDeck } from './StoryDeck';
+import { canSpeak, speak } from './narrator';
+import { slideNarration, StorySlideView, useStoryDeck } from './StoryDeck';
 import { VisualCard, type DrillTarget } from './VisualCard';
 
 const Grid = WidthProvider(Responsive);
+/** Autoplay time per slide without the voice. */
+const SLIDE_MS = 9000;
+/** A narrated slide stays at least this long, so short pages do not flash past. */
+const MIN_SLIDE_MS = 5000;
 const ExportDialog = lazy(() => import('./ExportDialog'));
 const VideoStudio = lazy(() => import('./VideoStudio'));
 
@@ -44,7 +50,7 @@ function SlicerControl({ field }: { field: FieldRef }) {
   const shown = options.filter((o) => o.label.toLowerCase().includes(q.toLowerCase())).slice(0, 200);
   return (
     <Popover label={`Filter by ${label}`} button={(open) => (
-      <button className={`slicer ${values.length ? 'active' : ''}`} aria-expanded={open}>
+      <button className={`slicer ${values.length ? 'active' : ''}`} data-guide="slicer" aria-expanded={open}>
         <FieldIcon text={field.col} size={12} /><span>{label}</span><b>{values.length === 0 ? 'All' : values.length === 1 ? keyLabel(engine, field, values[0]) : `${values.length} selected`}</b><ChevronDown size={13} />
       </button>
     )}>
@@ -82,7 +88,7 @@ function FilterBar() {
       <AreaPicker />
       {report.slicerFields.map((f) => <SlicerControl key={fieldLabel(f)} field={f} />)}
       {available.length > 0 && (
-        <Popover label="Add a filter" button={() => <button className="btn sm ghost"><Plus size={14} /> Filter</button>}>
+        <Popover label="Add a filter" button={() => <button className="btn sm ghost" data-guide="add-filter"><Plus size={14} /> Filter</button>}>
           {(close) => available.map((c) => <button key={c.name} onClick={() => { mutateReport((r) => ({ ...r, slicerFields: [...r.slicerFields, { col: c.name, part: c.type === 'date' ? 'year' : undefined }] })); close(); }}>{c.name}</button>)}
         </Popover>
       )}
@@ -136,7 +142,7 @@ export function Report() {
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [exporting, setExporting] = useState(false);
   const [video, setVideo] = useState(false);
-  // The AI analyst opens by itself on every report. Closing it is remembered for that report only.
+  // The analyst opens by itself on every report. Closing it is remembered for that report only.
   const analystKey = `srw-analyst-hidden:${s.projectId ?? 'new'}`;
   const [analyst, setAnalystState] = useState(() => { try { return localStorage.getItem(analystKey) !== '1'; } catch { return true; } });
   const setAnalyst = (open: boolean) => {
@@ -162,8 +168,8 @@ export function Report() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /*
-   * Present mode: AI story slides first (title, summary, key figures, forecast, findings), then one report page
-   * at a time on the full screen, then the AI's recommended actions. One counter walks through all of them.
+   * Present mode: story slides first (title, summary, key figures, forecast, findings), then one report page
+   * at a time on the full screen, then the recommended actions. One counter walks through all of them.
    */
   const pageIndex = report.pages.findIndex((p) => p.id === page?.id);
   const deck = useStoryDeck(cs, presenting);
@@ -180,14 +186,27 @@ export function Report() {
       return next;
     });
   }, [deck.intro.length, deck.outro.length]);
-  // Autoplay moves to the next slide every 9 seconds and stops at the end.
+  const storySlide = !presenting ? null : deckPos < deck.intro.length ? deck.intro[deckPos] : deckPos >= deck.intro.length + report.pages.length ? deck.outro[deckPos - deck.intro.length - report.pages.length] : null;
+  // With the voice on, autoplay reads each slide aloud and moves on when it finishes.
+  const [voice, setVoiceState] = useState(() => { try { return canSpeak() && localStorage.getItem('srw-present-voice') === 'on'; } catch { return false; } });
+  const setVoice = (on: boolean) => { setVoiceState(on); try { localStorage.setItem('srw-present-voice', on ? 'on' : 'off'); } catch { /* private mode */ } };
+  const narration = useRef('');
+  narration.current = storySlide ? slideNarration(storySlide) : deck.pages[page?.id ?? ''] ?? page?.name ?? '';
+  // Autoplay moves to the next slide every 9 seconds, or after the narration, and stops at the end.
   useEffect(() => {
     if (!presenting || !playing) return;
-    if (deckPos >= deckTotal - 1) { setPlaying(false); return; }
-    const t = setTimeout(() => stepPage(1), 9000);
+    const last = deckPos >= deckTotal - 1;
+    const next = () => { if (last) setPlaying(false); else stepPage(1); };
+    if (voice && canSpeak()) {
+      const started = Date.now();
+      let wait: ReturnType<typeof setTimeout> | undefined;
+      const stop = speak(narration.current, () => { wait = setTimeout(next, Math.max(0, MIN_SLIDE_MS - (Date.now() - started))); });
+      return () => { stop(); clearTimeout(wait); };
+    }
+    if (last) { setPlaying(false); return; }
+    const t = setTimeout(next, SLIDE_MS);
     return () => clearTimeout(t);
-  }, [presenting, playing, deckPos, deckTotal, stepPage]);
-  const storySlide = !presenting ? null : deckPos < deck.intro.length ? deck.intro[deckPos] : deckPos >= deck.intro.length + report.pages.length ? deck.outro[deckPos - deck.intro.length - report.pages.length] : null;
+  }, [presenting, playing, deckPos, deckTotal, stepPage, voice]);
   const startPresenting = () => { s.selectVisual(null); setDeckPos(0); setPlaying(false); setPresenting(true); void root.current?.requestFullscreen?.().catch(() => undefined); };
   const stopPresenting = useCallback(() => { setPresenting(false); setPlaying(false); if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined); }, []);
   useEffect(() => {
@@ -204,6 +223,13 @@ export function Report() {
     return () => { removeEventListener('keydown', key); document.removeEventListener('fullscreenchange', screen); };
   }, [presenting, stepPage, stopPresenting]);
   useEffect(() => { dispatchEvent(new Event('resize')); }, [presenting, side]);
+
+  // The guide can open the assistant in the side panel when it suggests asking a question.
+  useEffect(() => {
+    const open = (e: Event) => { if ((e as CustomEvent).detail === 'assistant') { setSideTab('Assistant'); setSide(true); } };
+    addEventListener(GUIDE_REVEAL, open);
+    return () => removeEventListener(GUIDE_REVEAL, open);
+  }, []);
 
   const elements = page?.elements ?? [];
   const layouts = useMemo(() => ({
@@ -238,13 +264,13 @@ export function Report() {
   return (
     <div ref={root} className={`report ${look.className} ${presenting ? 'presenting' : ''}`} style={look.vars as CSSProperties}>
       <header className="topbar no-print">
-        <button className="icon-btn" aria-label="Back to home" title="Back to home" onClick={() => s.setRoute('home')}><ArrowLeft size={18} /></button>
+        <button className="icon-btn" data-guide="home" aria-label="Back to home" title="Back to home" onClick={() => s.setRoute('home')}><ArrowLeft size={18} /></button>
         <Logo />
         <NameInput className="title-input" label="Report name" value={report.title} onCommit={s.renameProject} />
         <div className="spacer" />
         <button className="icon-btn" aria-label="Undo" title="Undo" disabled={!s.undoStack.length} onClick={s.undoReport}><Undo2 size={17} /></button>
         <button className="icon-btn" aria-label="Redo" title="Redo" disabled={!s.redoStack.length} onClick={s.redoReport}><Redo2 size={17} /></button>
-        {s.accessRole !== 'viewer' && <button className="btn ghost" onClick={() => s.setRoute('prepare')}><SlidersHorizontal size={15} /> Data</button>}
+        {s.accessRole !== 'viewer' && <button className="btn ghost" data-guide="data" onClick={() => s.setRoute('prepare')}><SlidersHorizontal size={15} /> Data</button>}
         {s.accessRole !== 'viewer' && <button className="btn ghost" title="Replace the data and keep this report" onClick={() => replaceInput.current?.click()}><RefreshCw size={15} /> Refresh</button>}
         <input ref={replaceInput} type="file" hidden accept={ACCEPT} aria-label="Choose a new data file" onChange={(e) => { const f = e.target.files?.[0]; if (f) void s.replaceData(f); e.target.value = ''; }} />
         <Popover label="Bookmarks" align="right" button={() => <button className="icon-btn" aria-label="Bookmarks" title="Bookmarks"><Bookmark size={17} /></button>}>
@@ -266,11 +292,11 @@ export function Report() {
         <button className="icon-btn" aria-label="Print" title="Print" onClick={() => print()}><Printer size={17} /></button>
         <ThemeSwitch />
         <button className="icon-btn" aria-label="Toggle side panel" aria-pressed={side} title="Toggle side panel" onClick={() => setSide(!side)}><PanelRight size={17} /></button>
-        {s.accessRole !== 'viewer' && <button className={`btn ghost ${side && sideTab === 'Design' ? 'active' : ''}`} onClick={() => { setSideTab('Design'); setSide(true); }}><Palette size={15} /> Design</button>}
-        <button className={`btn ghost ${analyst ? 'active' : ''}`} aria-pressed={analyst} onClick={() => setAnalyst(!analyst)}><BrainCircuit size={15} /> AI analyst</button>
-        <button className="btn ghost" onClick={startPresenting}><MonitorPlay size={15} /> Present</button>
-        <button className="btn ghost" onClick={() => setVideo(true)}><Clapperboard size={15} /> Video</button>
-        <button className="btn primary" onClick={() => setExporting(true)}><Download size={15} /> Download</button>
+        {s.accessRole !== 'viewer' && <button className={`btn ghost ${side && sideTab === 'Design' ? 'active' : ''}`} data-guide="design" onClick={() => { setSideTab('Design'); setSide(true); }}><Palette size={15} /> Design</button>}
+        <button className={`btn ghost ${analyst ? 'active' : ''}`} data-guide="analyst" aria-pressed={analyst} onClick={() => setAnalyst(!analyst)}><BrainCircuit size={15} /> Analyst</button>
+        <button className="btn ghost" data-guide="present" onClick={startPresenting}><MonitorPlay size={15} /> Present</button>
+        <button className="btn ghost" data-guide="video" onClick={() => setVideo(true)}><Clapperboard size={15} /> Video</button>
+        <button className="btn primary" data-guide="download" onClick={() => setExporting(true)}><Download size={15} /> Download</button>
       </header>
 
       {s.schemaNotice && (
@@ -325,7 +351,7 @@ export function Report() {
                 </button>
               )
             ))}
-            <Popover label="Add a page" button={() => <button className="add-page" aria-label="Add a page"><Plus size={15} /></button>}>
+            <Popover label="Add a page" button={() => <button className="add-page" data-guide="add-page" aria-label="Add a page"><Plus size={15} /></button>}>
               {(close) => <>
                 {templates.map((t) => <button key={t.id} className="tpl" onClick={() => { s.addTemplatePage(t.id); close(); }}><b>{t.name}</b><small>{t.reason}. {t.description}</small></button>)}
                 <button className="tpl" onClick={() => { const id = newId('p'); s.mutateReport((r) => ({ ...r, pages: [...r.pages, { id, name: `Page ${r.pages.length + 1}`, visuals: [], layout: [] }] })); s.setPage(id); close(); }}><b>Blank page</b></button>
@@ -359,6 +385,9 @@ export function Report() {
           <span role="status">{deckPos + 1} / {deckTotal}</span>
           <button className="icon-btn" aria-label="Next slide" disabled={deckPos >= deckTotal - 1} onClick={() => stepPage(1)}><ArrowRight size={17} /></button>
           <button className="icon-btn" aria-label={playing ? 'Pause autoplay' : 'Play automatically'} aria-pressed={playing} title={playing ? 'Pause' : 'Play automatically'} onClick={() => setPlaying(!playing)}>{playing ? <Pause size={16} /> : <Play size={16} />}</button>
+          {canSpeak() && <button className={`icon-btn ${voice ? 'on' : ''}`} aria-label={voice ? 'Turn the voice off' : 'Read the slides aloud'} aria-pressed={voice} title={voice ? 'Voice on' : 'Read the slides aloud'} onClick={() => setVoice(!voice)}>{voice ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>}
+          {playing && voice && <span className="present-speaking" aria-label="Narrating" role="img"><i /><i /><i /><i /></span>}
+          {playing && !voice && deckPos < deckTotal - 1 && <span className="present-timer" key={deckPos} aria-hidden="true"><i style={{ animationDuration: `${SLIDE_MS}ms` }} /></span>}
           <button className="btn sm" onClick={stopPresenting}><X size={14} /> Exit</button>
         </nav>
       )}

@@ -2,6 +2,7 @@
 import { Component, lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { useStore } from './state/store';
 import { BusyOverlay, Toasts, useDarkMode } from './ui/common';
+import { GuideAssistant } from './ui/GuideAssistant';
 import { Home } from './ui/Home';
 import { ImportDialog } from './ui/ImportDialog';
 import { UnlockDialog } from './ui/UnlockDialog';
@@ -58,6 +59,7 @@ export function App() {
       {pending && <ImportDialog />}
       {mswdUpload && <Suspense fallback={null}><MswdDialog initial={mswdUpload} onClose={closeMswd} /></Suspense>}
       {locked && <UnlockDialog />}
+      <GuideAssistant />
       <BusyOverlay />
       <Toasts />
     </ErrorBoundary>
